@@ -22,6 +22,14 @@ using namespace std;
 #define USERNAME_MAXLEN 30
 #define PASSWORD_MAXLEN 30
 
+enum TYPE{
+    BROADCAST = 0,
+    UNICAST = 1,
+    AUTH = 2,
+    INFO = 3,
+    CHAT = 4
+
+};
 
 class user;
 class chat;
@@ -33,6 +41,14 @@ private: int id;
 private: string username;
 private: string password;
 private: int fd;
+public:
+    bool operator==(const user &rhs) const {
+        return id == rhs.id;
+    }
+
+    bool operator!=(const user &rhs) const {
+        return !(rhs == *this);
+    }
 
 public:
     user(int id, string username,  string password, int fd) {
@@ -84,17 +100,22 @@ public:
 
 
 class msg{
+private: TYPE type;
 private: user mittente;       //fd
 private: user destinatario;   //fd
 private: string content;
 public:
-    msg(user mittente, user destinatario, string content){
+    msg(TYPE type, user mittente, user destinatario, string content){
+        msg::type = type;
         msg::mittente = mittente;
         msg::destinatario = destinatario;
         msg::content = content;
     }
 
     msg(){}
+    TYPE getType(){
+        return type;
+    }
     user getMittente()  {
         return mittente;
     }
@@ -105,6 +126,9 @@ public:
 
     const string getContent()  {
         return content;
+    }
+    void setType(TYPE type){
+        msg::type = type;
     }
 
     void setMittente(user mittente) {

@@ -17,7 +17,7 @@ void    send_msg(int socket, const char *msg);
 size_t  recv_msg(int socket, char *buf, size_t buf_len);
 
 // server
-user* authentication(int client_desc);
+user * authentication(int client_desc);
 
 // prototipi dei metodi definiti in util.c
 //int     parse_join_msg(char* msg, size_t msg_len, char* nickname);

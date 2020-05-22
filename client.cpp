@@ -30,6 +30,7 @@ void sender(int client_desc){
     while (running){
         string line;
         getline(cin,line);
+
         send_msg(client_desc,line.c_str());
     }
     close(client_desc);
@@ -48,7 +49,7 @@ void receiver(int client_desc){
         // ricevo messaggio di benvenuto
         int bytesRead = recv_msg(client_desc,msg_buf,MSG_BUFSIZE);
         if(bytesRead > 0) cout << msg_buf << endl;
-        //else exit(EXIT_FAILURE);
+
     }
 
 }
