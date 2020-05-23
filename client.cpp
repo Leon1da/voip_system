@@ -42,12 +42,12 @@ void sender(int client_desc){
 void receiver(int client_desc){
 
     // create a message buffer
-    char msg_buf[MSG_BUFSIZE];
+    char msg_buf[MSG_SIZE];
 
     while (running){
-        memset(msg_buf,0,MSG_BUFSIZE);
+        memset(msg_buf,0, MSG_SIZE);
         // ricevo messaggio di benvenuto
-        int bytesRead = recv_msg(client_desc,msg_buf,MSG_BUFSIZE);
+        int bytesRead = recv_msg(client_desc, msg_buf, MSG_SIZE);
         if(bytesRead > 0) cout << msg_buf << endl;
 
     }

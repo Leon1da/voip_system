@@ -15,9 +15,8 @@ using namespace std;
 #define SERVER_ADDRESS "127.0.0.1"
 #define SERVER_PORT 3000
 
-#define MSG_BUFSIZE 512
-#define SRC 8
-#define DEST 8
+#define MSG_SIZE 512
+#define CMD_SIZE 16
 
 #define USERNAME_MAXLEN 30
 #define PASSWORD_MAXLEN 30
@@ -41,6 +40,7 @@ private: int id;
 private: string username;
 private: string password;
 private: int fd;
+private: bool logged;
 public:
     bool operator==(const user &rhs) const {
         return id == rhs.id;
@@ -51,11 +51,12 @@ public:
     }
 
 public:
-    user(int id, string username,  string password, int fd) {
+    user(int id, string username,  string password, int fd, bool logged) {
         user::id = id;
         user::username = username;
         user::password = password;
         user::fd = fd;
+        user::logged = logged;
     }
     user(int id, string username,  string password) {
         user::id = id;
@@ -64,6 +65,10 @@ public:
     }
 
     user(){}
+
+    void setLogged(bool log){
+        user::logged = log;
+    }
 
     void setId(int id) {
         user::id = id;
@@ -95,6 +100,10 @@ public:
 
     int getFD(){
         return fd;
+    }
+
+    bool isLogged(){
+        return logged;
     }
 };
 
@@ -146,39 +155,36 @@ public:
 };
 
 class chat {
-private: user user_1, user_2;
-private: list<msg> messages;
+
+private: list<user> users;
+private: list<string> messages;
 
 
 public:
-    chat(user user_1, user user_2, list <msg> messages){
-        chat::user_1 = user_1;
-        chat::user_2 = user_2;
+    chat(list<user> users, list <string> messages){
+        chat::users = users;
         chat::messages = messages;
     }
+
     chat(){}
 
-    user getUser1() {
-        return user_1;
-    }
-    user getUser2() {
-        return user_2;
+    list<user> getUsers() {
+        return users;
     }
 
-    list <msg> getMessages() {
+    list <string> getMessages() {
         return messages;
     }
 
-    void setUser1(user user_1){
-        chat::user_1 = user_1;
+    void setUsers(list<user> users){
+        chat::users = users;
     }
 
-    void setUser2(user user_2){
-        chat::user_2 = user_2;
-    }
-
-    void setMessages(list <msg> messages) {
+    void setMessages(list <string> messages) {
         chat::messages = messages;
+    }
+    void addMessage(string msg){
+        chat::messages.push_back(msg);
     }
 
 };
