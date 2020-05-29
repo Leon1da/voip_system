@@ -28,13 +28,13 @@ using namespace std;
 #define MAX_CONN 10
 
 // database
-list<chat*>* chats = new list<chat*>();
-list<user*>* users = new list<user*>();
+list<chat*>* g_chats = new list<chat*>();
+list<user*>* g_users = new list<user*>();
 // end database
 
 
-list<user>* active_users = new list<user>();
-list<chat>* active_chat = new list<chat>();
+list<user*>* g_active_users = new list<user*>();
+list<chat*>* g_active_chat = new list<chat*>();
 
 
 
@@ -55,169 +55,45 @@ bool quit_chat(user *pUser);
 
 bool isAlreadyLogged(user usr);
 
-void connection_handler(int client_desc){
-
-    // autenticazione client
-    user* newUser = authentication(client_desc);
-    if(newUser == nullptr){
-        //errore interno
-    }
-
-    // start chat session
-    cout << newUser->getUsername() << " si e` autenticato." <<endl;
-
-    help_message(newUser);
-
-    char cmd_buf[CMD_SIZE];
-    while (1){
-        int byteRead = recv_msg(newUser->getFD(), cmd_buf, CMD_SIZE);
-        if(byteRead > 0){
-            if(strcmp(cmd_buf,"help") == 0) help_message(newUser);
-            else if(strcmp(cmd_buf,"users") == 0){
-                list_users(newUser);
-                help_message(newUser);
-            }
-            else if(strcmp(cmd_buf,"chat") == 0) start_chat(newUser);
-            else if(strcmp(cmd_buf,"video") == 0) start_video_chat(newUser);
-            else if(strcmp(cmd_buf,"exit") == 0){
-                if(quit_chat(newUser)) break;
-                else help_message(newUser);
-            }
-
+// dato un utente restituisce tutte le chat attive aperte
+list<chat*>* getUserChats(user* usr){
+    list<chat*>* user_chats = new list<chat*>();
+    for (chat* &c : *g_active_chat) {
+        list<user> chat_users = c->getUsers();
+        if(chat_users.front() == *usr || chat_users.back() == *usr) {
+            user_chats->push_back(c);
         }
     }
+    return user_chats;
 
-
-    free(newUser);
-
-    // avvertire i client e pulire la memoria
-
-    cout << "end_chat_session"<<endl;
-
-    close(client_desc);
-
-}
-
-bool quit_chat(user *pUser) {
-    string quit_msg = "******************** [QUIT] ********************\n"
-                      "* Sei sicuro di voler uscire? (y/n)            *";
-    send_msg(pUser->getFD(), quit_msg.c_str());
-
-    char buf[MSG_SIZE];
-    int readBytes = recv_msg(pUser->getFD(), buf, MSG_SIZE);
-    if(readBytes > 0){
-        if(strcmp(buf,"y") == 0) {
-            pUser->setLogged(false);
-            active_users->remove(*pUser);
-            return true;
-        }
-    }
-
-    return false;
 }
 
 void start_video_chat(user *pUser) {
-    send_msg(pUser->getFD(),"******************** [VIDEOCHAT] ********************");
-}
+    string video_chat_msg;
+    video_chat_msg.append("********************* * VIDEOCHAT * ********************\n");
+    video_chat_msg.append("********************************************************\n");
 
-void start_chat(user *newUser) {
-    send_msg(newUser->getFD(),"******************** [CHAT] ********************");
-    send_msg(newUser->getFD(),"* Seleziona l'utente con cui vuoi chattare *");
-
-    user *destUser = nullptr;
-    while (destUser == nullptr) {
-
-        // mostro gli utenti online
-        list_users(newUser);
-
-        // aspetto che il client scelga l'utente
-        char buf_username_dest[USERNAME_MAXLEN];
-        int bytesRead = recv_msg(newUser->getFD(), buf_username_dest, USERNAME_MAXLEN);
-        if (bytesRead > 0) {
-
-            // il cliente ha scelto di tornare indietro
-            if(strcmp(buf_username_dest, "return") == 0){
-                break;
-            }
-
-            for (user &u : *active_users) {
-                if (u.getUsername() == buf_username_dest) {
-                    destUser = &u;
-                    break;
-                }
-            }
-
-            if (destUser == nullptr) send_msg(newUser->getFD(), "[SERVER] L'utente che hai selezionato non e` online");
-            else send_msg(newUser->getFD(), "[SERVER] L'utente e` online, inzia a chattare");
-        }
-
-    }
-
-    // verifico se c'e` gia una chat aperta
-//    chat* newChat = nullptr;
-//    for (chat &c : *active_chat) {
-//        list<user> chat_users = c.getUsers();
-//        user first = chat_users.front();
-//        user second = chat_users.back();
-//        if(first == *newUser && second == *destUser
-//            || first == *destUser && second == *newUser){
-//
-//            // c'e` una chat attiva (salvero` i messaggi in tale chat)
-//            newChat = &c;
-//        }
-//    }
-
-//    if(newChat == nullptr) {
-//        // non c'e` una chat attiva la creo
-//        newChat = new chat(list<user>(newUser,destUser), list<string>());
-//    }
-
-
-
-    cout << "Chat attiva tra " << newUser->getUsername() << " e " << destUser->getUsername() << endl;
-
-//    send_msg(destUser->getFD(), "[SERVER] - return - per uscire da questa chat");
-
-    char message[MSG_SIZE];
-    while (1){
-        int bytesRead = recv_msg(newUser->getFD(), message, sizeof(message));
-        if (bytesRead > 0) {
-            if(strcmp(message,"return") == 0) {
-                // salvo la chat nel db
-//                 chats->push_back(newChat);
-                break;
-            }
-            else{
-                string msg = "[";
-                msg.append(newUser->getUsername()).append("] ").append(message);
-                send_msg(destUser->getFD(), msg.c_str());
-
-                // metto i messaggi inviati nella chat
-//                newChat->addMessage(msg);
-
-
-            }
-        }
-
-    }
-
-    help_message(newUser);
-
+    send_msg(pUser->getFD(),video_chat_msg.c_str());
 }
 
 void list_users(user *pUser) {
 
-    string list_msg = "******************** [USERS] ********************\n";
+    string list_msg = "************************* USERS ************************\n";
 
-    if(active_users->size()>1){
-        list_msg.append("* Utenti Online:                                \n*");
-        for (user &user : *active_users) {
-            if(user != *pUser) list_msg.append(string("* ").append(user.getUsername()).append("\n").c_str());
+    if(g_active_users->size() > 1){
+        list_msg.append("* Utenti Online:                                       *\n");
+        for (user* &user : *g_active_users) {
+            if(*user != *pUser){
+                list_msg.append(string("* - "));
+                list_msg.append(user->getUsername());
+                list_msg.append("                                           *\n");
+            }
         }
     } else{
-        list_msg.append("* Non ci sono altri utenti online             *");
+        list_msg.append("* Non ci sono altri utenti online                      *\n");
     }
 
+    list_msg.append("********************************************************\n");
     send_msg(pUser->getFD(),list_msg.c_str());
 
 
@@ -225,33 +101,158 @@ void list_users(user *pUser) {
 
 void help_message(user *pUser) {
 
-    string help_msg = "******************** [HELP] ********************\n"
-                         "* Benvenuto/a nella chat.                      *\n"
-                         "* Comandi disponibili:                         *\n"
-                         "* - users - mostra gli utenti online           *\n"
-                         "* - video - (coming soon)                      *\n"
-                         "* - chat - apre una chat con un utente online  *\n"
-                         "*   - return - esce da una chat aperta         *\n"
-                         "* - help - mostra questo messaggio             *\n"
-                         "* - exit - logout                              *\n"
-                         "************************************************";
+    string help_msg_1 = "********************      HELP      ********************\n"
+                        "* Benvenuto/a nella chat.                              *\n";
 
-    send_msg(pUser->getFD(), help_msg.c_str());
+    string help_msg_2 = "* Comandi disponibili:                                 *\n"
+                        "* - users - mostra gli utenti online                   *\n"
+                        "* - video - (coming soon)                              *\n"
+                        "* - chat - apre una chat con un utente online          *\n"
+                        "*   - return - esce da una chat aperta                 *\n"
+                        "* - help - mostra questo messaggio                     *\n"
+                        "* - exit - logout                                      *\n"
+                        "********************************************************\n";
+
+    send_msg(pUser->getFD(), help_msg_1.c_str());
+    send_msg(pUser->getFD(), help_msg_2.c_str());
+
 
 }
+
+
+void start_chat(user *newUser) {
+
+    string chat_msg;
+    chat_msg.append("********************* *   CHAT    * ********************\n");
+    chat_msg.append("* Seleziona l'utente con cui vuoi chattare             *\n");
+    chat_msg.append("* return - per tornare al menu` principale             *\n");
+    chat_msg.append("* users - per vedere gli utenti online                 *\n");
+    chat_msg.append("********************************************************\n");
+
+    send_msg(newUser->getFD(),chat_msg.c_str());
+
+    user* destUser = nullptr;
+    while (destUser == nullptr) {
+
+        char buf_username_dest[USERNAME_MAXLEN];
+        int bytesRead = recv_msg(newUser->getFD(), buf_username_dest, USERNAME_MAXLEN);
+        if (bytesRead > 0) {
+
+            if(strcmp(buf_username_dest, "return") == 0) return; // torna indietro
+            if(strcmp(buf_username_dest, "users") == 0) list_users(newUser); // mostra gli utenti online
+            else{
+                // verifico se l'utente scelto e` online
+                for (user* &u : *g_active_users) {
+                    if (u->getUsername() == buf_username_dest && u->getUsername() != newUser->getUsername()) {
+                        destUser = u;
+                        break;
+                    }
+                }
+                if (destUser == nullptr) send_msg(newUser->getFD(), "[SERVER][WARNING] L'utente che hai selezionato non e` online");
+                else{
+                    string msg ="";
+                    msg.append("[SERVER][SUCCESS] ").append(destUser->getUsername()).append(" e` online, scrivi qualcosa");
+                    send_msg(newUser->getFD(), msg.c_str());
+                    msg = "";
+                    msg.append("[SERVER][INFO] new incoming chat from ").append(newUser->getUsername());
+                    send_msg(destUser->getFD(), msg.c_str());
+                }
+            }
+         }
+    }
+
+    cout << "[" << newUser->getUsername() << "] ha aperto la chat con [" << destUser->getUsername() << "]" << endl;
+
+    char message[MSG_SIZE];
+    while (1){
+        int bytesRead = recv_msg(newUser->getFD(), message, sizeof(message));
+        if (bytesRead > 0) {
+            if(strcmp(message,"return") == 0) break;    // esco dalla chat
+            else{
+                string msg = "[";
+                msg.append(newUser->getUsername()).append("] ").append(message);
+
+                if(destUser->isLogged()){
+                    // cout << destUser->getUsername() << " online." <<endl;
+                    send_msg(destUser->getFD(), msg.c_str());
+                    cout << newUser->getUsername() << " send message to " << destUser->getUsername() << endl;
+                }
+                else {
+                    // cout << destUser->getUsername() << " offline." <<endl;
+                    string alert_msg = "[SERVER][INFO] ";
+                    alert_msg.append(destUser->getUsername());
+                    alert_msg.append(" si e` disconnesso.");
+                    send_msg(newUser->getFD(), alert_msg.c_str());
+                    break;
+                }
+            }
+        }
+
+    }
+    send_msg(newUser->getFD(), "Sei nel menu principale");
+    help_message(newUser);
+
+}
+
+
+void connection_handler(int client_desc){
+    // autenticazione client
+    user* newUser = authentication(client_desc);
+    if(newUser == nullptr){}
+
+    // start chat session
+    cout << newUser->getUsername() << " si e` autenticato." <<endl;
+
+    // mostra azioni disponibili
+    help_message(newUser);
+
+    char cmd_buf[CMD_SIZE];
+    while (1){
+        int byteRead = recv_msg(newUser->getFD(), cmd_buf, CMD_SIZE);
+        if(byteRead > 0){
+            if(strcmp(cmd_buf,"help") == 0) help_message(newUser);
+            else if(strcmp(cmd_buf,"users") == 0) list_users(newUser);
+            else if(strcmp(cmd_buf,"chat") == 0) start_chat(newUser);
+            else if(strcmp(cmd_buf,"video") == 0) start_video_chat(newUser);
+            else if(strcmp(cmd_buf,"exit") == 0) break;
+            else{
+                string msg;
+                msg.append("[SERVER][INFO] Comando sconosciuto\n");
+                msg.append("[SERVER][INFO] help - mostra le azioni disponibili");
+                send_msg(newUser->getFD(),msg.c_str());
+            }
+
+        }
+    }
+
+    cout << newUser->getUsername() << " ha lasciato la chat." << endl;
+
+//    list<chat*> *chats = getUserChats(newUser);
+
+    newUser->setLogged(false);
+    cout << "newUser setLogged false" <<endl;
+    g_active_users->remove(newUser);
+    cout << "active users remove new user" <<endl;
+//    free(newUser);
+    close(client_desc);
+
+}
+
 
 // autenticazione client
 user* authentication(int client_desc) {
 
     // invio messaggio benvenuto
-    send_msg(client_desc, "******************** AUTHENTICATION ********************");
-    send_msg(client_desc, "* Benvenuto, effettua il login per iniziare a chattare.*");
+    string auth_msg = "******************** AUTHENTICATION ********************\n"
+                      "* Benvenuto, effettua il login per iniziare a chattare.*\n";
+    send_msg(client_desc,auth_msg.c_str());
 
     user* utente = nullptr;
     while (utente == nullptr){
 
         // username
-        send_msg(client_desc,"* Inserisci username: ");
+        auth_msg = "* Inserisci username:                                  *\n";
+        send_msg(client_desc,auth_msg.c_str());
         char username[USERNAME_MAXLEN];
         if(recv_msg(client_desc,username,sizeof(username)) < 0){
             cout << "errore username";
@@ -259,7 +260,8 @@ user* authentication(int client_desc) {
         }
 
         // password
-        send_msg(client_desc,"* Inserisci password: ");
+        auth_msg = "* Inserisci password:                                  *";
+        send_msg(client_desc, auth_msg.c_str());
         char password[PASSWORD_MAXLEN];
         if(recv_msg(client_desc,password,sizeof(password))<0){
             //errore
@@ -268,10 +270,10 @@ user* authentication(int client_desc) {
         }
 
         // check username/password
-        for(user* &u : *users){
+        for(user* &u : *g_users){
             if(strcmp(u->getUsername().c_str(),username) == 0 &&
                strcmp(u->getPassword().c_str(),password) == 0){
-                if(isAlreadyLogged(*u)) send_msg(client_desc, "* Sei gia loggato.");
+                if(isAlreadyLogged(*u)) send_msg(client_desc, "[SERVER][INFO] Sei gia loggato.");
                 else{
                     // utente registrato
                     utente = new user(
@@ -282,24 +284,25 @@ user* authentication(int client_desc) {
                             true
                     );
                     // lo metto nella lista di utenti attivi
-                    active_users->push_back(*utente);
+                    g_active_users->push_back(utente);
                 }
                 break;
-
             }
         }
 
 
-        if(utente == nullptr) send_msg(client_desc,"[SERVER] Login Fallito riprova.");
-        else send_msg(client_desc,"[SERVER] Login avvenuto con successo");
+        if(utente == nullptr) send_msg(client_desc,"[SERVER][WARNING] Login Fallito riprova.");
+        else send_msg(client_desc,"[SERVER][SUCCESS] Login avvenuto con successo");
 
     }
+
+    send_msg(client_desc,"********************************************************\n");
 
     return utente;
 }
 
 bool isAlreadyLogged(user usr) {
-    for (user &user : *active_users) if(user == usr) return true;
+    for (user* &user : *g_active_users) if(*user == usr) return true;
     return false;
 }
 
@@ -315,14 +318,14 @@ int main(int argc, char *argv[])
     user* u7 = new user(16,"giovanni","giovanni");
     user* u8 = new user(17,"nino","nino");
 
-    users->push_back(u1);
-    users->push_back(u2);
-    users->push_back(u3);
-    users->push_back(u4);
-    users->push_back(u5);
-    users->push_back(u6);
-    users->push_back(u7);
-    users->push_back(u8);
+    g_users->push_back(u1);
+    g_users->push_back(u2);
+    g_users->push_back(u3);
+    g_users->push_back(u4);
+    g_users->push_back(u5);
+    g_users->push_back(u6);
+    g_users->push_back(u7);
+    g_users->push_back(u8);
 
 
     //setup a socket and connection tools
@@ -362,13 +365,19 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
+    // now server is ready for accept new connections from clients
+
+    // create a thread for manage server with shell
+    // and another thread for accecpt incoming connection
+    // [TODO]
+
     //receive a request from client using accept
     //we need a new address to connect with the client
     sockaddr_in* newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
     socklen_t newSockAddrSize = sizeof(newSockAddr);
 
     // one thread for each incoming connection
-    // list<thread*> connection;
+     list<thread*> connection;
     //accept, create a new socket descriptor to
     //handle the new connection with client
 
@@ -383,18 +392,19 @@ int main(int argc, char *argv[])
         cout << "New connection incoming" << endl;
 
         // client connection helndler
-        // thread t1 = thread(connection_handler,client_fd);
-        // connection.push_back(t1);
-        new thread(connection_handler,client_fd);
+        thread* client = new thread(connection_handler,client_fd);
+        //client_thread.detach();
+        connection.push_back(client);
 
         newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
 
     }
 
 
-
     close(serverSd);
     cout << "Connection closed..." << endl;
+
+
 
     return 0;
 }

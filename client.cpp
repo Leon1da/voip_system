@@ -27,14 +27,19 @@ bool running = true;
 
 void sender(int client_desc){
 
+    bool openChat = false;
     while (running){
         string line;
         getline(cin,line);
+        if(strcmp(line.c_str(),"exit") == 0){
+            if(openChat) running = false;
+            else cout << "Chiudi la chat con digitando return prima di uscire" << endl;
+        }else if(strcmp(line.c_str(),"chat") == 0) openChat = true;
 
         send_msg(client_desc,line.c_str());
     }
-    close(client_desc);
-    cout << "Connection closed" << endl;
+
+    cout << "Sender ready for connection closed" << endl;
 
 
 }
@@ -52,6 +57,7 @@ void receiver(int client_desc){
 
     }
 
+    cout << "Reciver ready for connection closed" << endl;
 }
 
 //Client side
@@ -85,11 +91,8 @@ int main(int argc, char *argv[])
     t_rec->join();
 
 
-
     close(clientSd);
     cout << "Connection closed" << endl;
-
-
 
     return 0;
 }
