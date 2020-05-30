@@ -27,15 +27,12 @@ bool running = true;
 
 void sender(int client_desc){
 
-    bool openChat = false;
+//    bool openChat = false;
     while (running){
         string line;
         getline(cin,line);
-        if(strcmp(line.c_str(),"exit") == 0){
-            if(openChat) running = false;
-            else cout << "Chiudi la chat con digitando return prima di uscire" << endl;
-        }else if(strcmp(line.c_str(),"chat") == 0) openChat = true;
 
+        if(strcmp(line.c_str(),"exit") == 0) running = false;
         send_msg(client_desc,line.c_str());
     }
 
@@ -52,6 +49,7 @@ void receiver(int client_desc){
     while (running){
         memset(msg_buf,0, MSG_SIZE);
         // ricevo messaggio di benvenuto
+
         int bytesRead = recv_msg(client_desc, msg_buf, MSG_SIZE);
         if(bytesRead > 0) cout << msg_buf << endl;
 
@@ -73,16 +71,19 @@ int main(int argc, char *argv[])
     sendSockAddr.sin_port = htons(SERVER_PORT);
     int clientSd = socket(AF_INET, SOCK_STREAM, 0);
     if(clientSd < 0){
-        cerr << "Error during socket create!" << endl;
+        perror("Error during socket create: ");
+        exit(EXIT_FAILURE);
     }
+    cout << "[Success] Socket created." << endl;
 
     //try to connect...
     int status = connect(clientSd,
                          (sockaddr*) &sendSockAddr, sizeof(sendSockAddr));
     if(status < 0){
-        cerr << "Error during connecting to socket!"<<endl;
+        perror("Error during connecting to socket: ");
+        exit(EXIT_FAILURE);
     }
-    cout << "Connected to the server!" << endl;
+    cout << "[Success] Connected to the server." << endl;
 
 
     thread* t_rec = new thread(receiver,clientSd);
@@ -91,8 +92,11 @@ int main(int argc, char *argv[])
     t_rec->join();
 
 
-    close(clientSd);
-    cout << "Connection closed" << endl;
+    if(close(clientSd) < 0){
+        perror("Error during close socket operation: ");
+        exit(EXIT_FAILURE);
+    }
+    cout << "[Success] Connection closed." << endl;
 
     return 0;
 }

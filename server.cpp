@@ -37,6 +37,9 @@ list<user*>* g_active_users = new list<user*>();
 list<chat*>* g_active_chat = new list<chat*>();
 
 
+bool running = true;
+// one thread for each incoming connection
+list<thread*> connection;
 
 int serverSd;
 
@@ -198,13 +201,18 @@ void start_chat(user *newUser) {
 void connection_handler(int client_desc){
     // autenticazione client
     user* newUser = authentication(client_desc);
-    if(newUser == nullptr){}
+    if(newUser == nullptr){
+        cout << "Errore inaspettato chiusura server" << endl;
+        exit(EXIT_FAILURE);
+    }
 
     // start chat session
     cout << newUser->getUsername() << " si e` autenticato." <<endl;
 
     // mostra azioni disponibili
     help_message(newUser);
+
+    string msg;
 
     char cmd_buf[CMD_SIZE];
     while (1){
@@ -214,9 +222,14 @@ void connection_handler(int client_desc){
             else if(strcmp(cmd_buf,"users") == 0) list_users(newUser);
             else if(strcmp(cmd_buf,"chat") == 0) start_chat(newUser);
             else if(strcmp(cmd_buf,"video") == 0) start_video_chat(newUser);
-            else if(strcmp(cmd_buf,"exit") == 0) break;
+            else if(strcmp(cmd_buf,"exit") == 0) {
+                msg = "";
+                msg.append("[SERVER] Alla prossima!");
+                send_msg(newUser->getFD(),msg.c_str());
+                break;
+            }
             else{
-                string msg;
+                msg = "";
                 msg.append("[SERVER][INFO] Comando sconosciuto\n");
                 msg.append("[SERVER][INFO] help - mostra le azioni disponibili");
                 send_msg(newUser->getFD(),msg.c_str());
@@ -227,14 +240,8 @@ void connection_handler(int client_desc){
 
     cout << newUser->getUsername() << " ha lasciato la chat." << endl;
 
-//    list<chat*> *chats = getUserChats(newUser);
-
     newUser->setLogged(false);
-    cout << "newUser setLogged false" <<endl;
     g_active_users->remove(newUser);
-    cout << "active users remove new user" <<endl;
-//    free(newUser);
-    close(client_desc);
 
 }
 
@@ -306,6 +313,97 @@ bool isAlreadyLogged(user usr) {
     return false;
 }
 
+void shell_routine(){
+
+    cout << "[Shell] start_shell_routine" << endl;
+
+    while (1){
+        string line;
+        getline(cin,line);
+        if(strcmp(line.c_str(),"shutdown") == 0){
+            cout << "[Shell] Wait until all client leave chat.." << endl;
+
+            running = false;
+            // join thread
+            for (thread* &t : connection) t->join();
+
+            // free thread
+            for (thread* &t : connection) free(t);
+
+            break;
+        }
+
+    }
+
+    cout << "[Shell] end_shell_routine" << endl;
+
+}
+
+
+
+void connection_routine(){
+
+    cout << "[Shell] init_connection_routine" << endl;
+
+    //receive a request from client using accept
+    //we need a new address to connect with the client
+    sockaddr_in* newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
+    socklen_t newSockAddrSize = sizeof(newSockAddr);
+
+    // file descriptor set
+    fd_set set;
+    FD_ZERO(&set); /* clear the set */
+    FD_SET(serverSd, &set); /* add our file descriptor to the set */
+
+    // timeout
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+
+    //accept, create a new socket descriptor to
+    //handle the new connection with client
+    while (running){
+
+        int ret = select(5 + 1, &set, NULL, NULL, &timeout);
+        if(ret == -1) {
+            // error occurred
+            perror("Error during server select operation");
+            exit(EXIT_FAILURE);
+        }
+        else if(ret == 0) {
+            // timeout occurred
+            if(!running) cout << "Timeout, closing server" <<endl;
+            break;
+        }else{
+            cout << " Accept " << endl;
+            if(running){
+                int client_fd = accept(serverSd, (sockaddr *)&newSockAddr, &newSockAddrSize);
+                if(client_fd < 0){
+                    perror("Error accepting request from client: ");
+                    exit(EXIT_FAILURE);
+                }
+
+                cout << "[Shell] New connection incoming" << endl;
+
+                // client connection helndler
+                thread* client = new thread(connection_handler,client_fd);
+                connection.push_back(client);
+                cout << "[Shell] Pushed new thread in connection list" << endl;
+
+                newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
+
+            }
+            else{
+                cout << " Connection incoming during server close. " << endl;
+                break;
+            }
+
+            }
+        }
+
+    cout << "[Shell] end_connection_routine" << endl;
+
+}
+
 //Server side
 int main(int argc, char *argv[])
 {
@@ -340,7 +438,7 @@ int main(int argc, char *argv[])
     serverSd = socket(AF_INET, SOCK_STREAM, 0);
     if(serverSd < 0){
         perror("Error establishing the server socket: ");
-        exit(0);
+        exit(EXIT_FAILURE);
     }
 
     int reuse = 1;
@@ -355,56 +453,42 @@ int main(int argc, char *argv[])
                           sizeof(servAddr));
     if(bindStatus < 0){
         perror("Error binding socket to local address: ");
-        exit(0);
+        exit(EXIT_FAILURE);
     }
 
     cout << "Waiting for a client to connect..." << endl;
     //listen for up to 5 requests at a time
     if(listen(serverSd,5) < 0){
         perror("Error listen on server socket: ");
-        exit(0);
+        exit(EXIT_FAILURE);
     }
 
     // now server is ready for accept new connections from clients
 
     // create a thread for manage server with shell
     // and another thread for accecpt incoming connection
-    // [TODO]
 
-    //receive a request from client using accept
-    //we need a new address to connect with the client
-    sockaddr_in* newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
-    socklen_t newSockAddrSize = sizeof(newSockAddr);
+    thread* cmd_thread = new thread(shell_routine);
+    thread* conn_thread = new thread(connection_routine);
 
-    // one thread for each incoming connection
-     list<thread*> connection;
-    //accept, create a new socket descriptor to
-    //handle the new connection with client
+    conn_thread->join();
+    cmd_thread->join();
 
-    int running = true;
-    while (running){
-        int client_fd = accept(serverSd, (sockaddr *)&newSockAddr, &newSockAddrSize);
-        if(client_fd < 0){
-            perror("Error accepting request from client: ");
-            exit(1);
-        }
+    free(cmd_thread);
+    free(conn_thread);
 
-        cout << "New connection incoming" << endl;
-
-        // client connection helndler
-        thread* client = new thread(connection_handler,client_fd);
-        //client_thread.detach();
-        connection.push_back(client);
-
-        newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
-
-    }
+    free(g_users);
+    free(g_chats);
+    free(g_active_users);
+    free(g_active_chat);
 
 
-    close(serverSd);
+
     cout << "Connection closed..." << endl;
-
-
+    if( close(serverSd) < 0){ // this cause an error on accept
+        perror("Error during close server socket");
+        exit(EXIT_FAILURE);
+    }
 
     return 0;
 }
