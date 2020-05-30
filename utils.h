@@ -21,6 +21,8 @@ using namespace std;
 #define USERNAME_MAXLEN 30
 #define PASSWORD_MAXLEN 30
 
+#define MAX_CONN_QUEUE 5
+
 enum TYPE{
     BROADCAST = 0,
     UNICAST = 1,

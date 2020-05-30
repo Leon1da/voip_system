@@ -25,23 +25,21 @@
 
 using namespace std;
 
-#define MAX_CONN 10
-
 // database
-list<chat*>* g_chats = new list<chat*>();
+//list<chat*>* g_chats = new list<chat*>();
 list<user*>* g_users = new list<user*>();
 // end database
 
 
 list<user*>* g_active_users = new list<user*>();
-list<chat*>* g_active_chat = new list<chat*>();
+//list<chat*>* g_active_chat = new list<chat*>();
 
 
 bool running = true;
 // one thread for each incoming connection
-list<thread*> connection;
+map<thread*,sockaddr_in*> connection;
 
-int serverSd;
+int server_fd;
 
 
 user * authentication(int client_desc);
@@ -60,14 +58,15 @@ bool isAlreadyLogged(user usr);
 
 // dato un utente restituisce tutte le chat attive aperte
 list<chat*>* getUserChats(user* usr){
-    list<chat*>* user_chats = new list<chat*>();
-    for (chat* &c : *g_active_chat) {
-        list<user> chat_users = c->getUsers();
-        if(chat_users.front() == *usr || chat_users.back() == *usr) {
-            user_chats->push_back(c);
-        }
-    }
-    return user_chats;
+//    list<chat*>* user_chats = new list<chat*>();
+//    for (chat* &c : *g_active_chat) {
+//        list<user> chat_users = c->getUsers();
+//        if(chat_users.front() == *usr || chat_users.back() == *usr) {
+//            user_chats->push_back(c);
+//        }
+//    }
+//    return user_chats;
+return nullptr;
 
 }
 
@@ -86,7 +85,7 @@ void list_users(user *pUser) {
     if(g_active_users->size() > 1){
         list_msg.append("* Utenti Online:                                       *\n");
         for (user* &user : *g_active_users) {
-            if(*user != *pUser){
+            if(*user != *pUser && user->isLogged()){
                 list_msg.append(string("* - "));
                 list_msg.append(user->getUsername());
                 list_msg.append("                                           *\n");
@@ -121,7 +120,6 @@ void help_message(user *pUser) {
 
 
 }
-
 
 void start_chat(user *newUser) {
 
@@ -197,7 +195,6 @@ void start_chat(user *newUser) {
 
 }
 
-
 void connection_handler(int client_desc){
     // autenticazione client
     user* newUser = authentication(client_desc);
@@ -239,12 +236,11 @@ void connection_handler(int client_desc){
     }
 
     cout << newUser->getUsername() << " ha lasciato la chat." << endl;
-
     newUser->setLogged(false);
-    g_active_users->remove(newUser);
+//  g_active_users->remove(newUser);
+//    delete newUser;
 
 }
-
 
 // autenticazione client
 user* authentication(int client_desc) {
@@ -309,7 +305,7 @@ user* authentication(int client_desc) {
 }
 
 bool isAlreadyLogged(user usr) {
-    for (user* &user : *g_active_users) if(*user == usr) return true;
+    for (user* &user : *g_active_users) if(*user == usr && user->isLogged()) return true;
     return false;
 }
 
@@ -323,13 +319,10 @@ void shell_routine(){
         if(strcmp(line.c_str(),"shutdown") == 0){
             cout << "[Shell] Wait until all client leave chat.." << endl;
 
-            running = false;
             // join thread
-            for (thread* &t : connection) t->join();
+            for (const auto &pair : connection) pair.first->join();
 
-            // free thread
-            for (thread* &t : connection) free(t);
-
+            running = false;
             break;
         }
 
@@ -340,73 +333,12 @@ void shell_routine(){
 }
 
 
-
-void connection_routine(){
-
-    cout << "[Shell] init_connection_routine" << endl;
-
-    //receive a request from client using accept
-    //we need a new address to connect with the client
-    sockaddr_in* newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
-    socklen_t newSockAddrSize = sizeof(newSockAddr);
-
-    // file descriptor set
-    fd_set set;
-    FD_ZERO(&set); /* clear the set */
-    FD_SET(serverSd, &set); /* add our file descriptor to the set */
-
-    // timeout
-    struct timeval timeout;
-    timeout.tv_sec = 10;
-
-    //accept, create a new socket descriptor to
-    //handle the new connection with client
-    while (running){
-
-        int ret = select(5 + 1, &set, NULL, NULL, &timeout);
-        if(ret == -1) {
-            // error occurred
-            perror("Error during server select operation");
-            exit(EXIT_FAILURE);
-        }
-        else if(ret == 0) {
-            // timeout occurred
-            if(!running) cout << "Timeout, closing server" <<endl;
-            break;
-        }else{
-            cout << " Accept " << endl;
-            if(running){
-                int client_fd = accept(serverSd, (sockaddr *)&newSockAddr, &newSockAddrSize);
-                if(client_fd < 0){
-                    perror("Error accepting request from client: ");
-                    exit(EXIT_FAILURE);
-                }
-
-                cout << "[Shell] New connection incoming" << endl;
-
-                // client connection helndler
-                thread* client = new thread(connection_handler,client_fd);
-                connection.push_back(client);
-                cout << "[Shell] Pushed new thread in connection list" << endl;
-
-                newSockAddr = (sockaddr_in*) calloc(1,sizeof(sockaddr_in));
-
-            }
-            else{
-                cout << " Connection incoming during server close. " << endl;
-                break;
-            }
-
-            }
-        }
-
-    cout << "[Shell] end_connection_routine" << endl;
-
-}
-
 //Server side
 int main(int argc, char *argv[])
 {
+
+    // utenti fittizzi
+    // TODO leggere utenti registrati da xml
     user* u1 = new user(10,"leonardo","leonardo");
     user* u2 = new user(11,"francesco","francesco");
     user* u3 = new user(12,"matteo","matteo");
@@ -426,39 +358,39 @@ int main(int argc, char *argv[])
     g_users->push_back(u8);
 
 
-    //setup a socket and connection tools
+    // setup a socket and connection tools
     sockaddr_in servAddr;
     bzero((char*)&servAddr, sizeof(servAddr));
     servAddr.sin_family = AF_INET;
     servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servAddr.sin_port = htons(SERVER_PORT);
 
-    //open stream oriented socket with internet address
-    //also keep track of the socket descriptor
-    serverSd = socket(AF_INET, SOCK_STREAM, 0);
-    if(serverSd < 0){
+    // create server socket
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if(server_fd < 0){
         perror("Error establishing the server socket: ");
         exit(EXIT_FAILURE);
     }
 
+
+    // set socket option (reuse address)
     int reuse = 1;
-    int err = setsockopt(serverSd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    int err = setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     if (err < 0){
         perror("Error establishing the server socket: ");
         exit(0);
     }
 
-    //bind the socket to its local address
-    int bindStatus = bind(serverSd, (struct sockaddr*) &servAddr,
-                          sizeof(servAddr));
+    // bind the socket to local address
+    int bindStatus = bind(server_fd, (struct sockaddr*) &servAddr, sizeof(servAddr));
     if(bindStatus < 0){
         perror("Error binding socket to local address: ");
         exit(EXIT_FAILURE);
     }
 
     cout << "Waiting for a client to connect..." << endl;
-    //listen for up to 5 requests at a time
-    if(listen(serverSd,5) < 0){
+    // listen on socket
+    if(listen(server_fd, MAX_CONN_QUEUE) < 0){
         perror("Error listen on server socket: ");
         exit(EXIT_FAILURE);
     }
@@ -466,29 +398,90 @@ int main(int argc, char *argv[])
     // now server is ready for accept new connections from clients
 
     // create a thread for manage server with shell
-    // and another thread for accecpt incoming connection
+    // only possible command - shutdown - that shuts down the server
 
     thread* cmd_thread = new thread(shell_routine);
-    thread* conn_thread = new thread(connection_routine);
 
-    conn_thread->join();
+
+    fd_set set;
+    FD_ZERO(&set); // clear set
+    FD_SET(server_fd, &set); // add server descriptor on set
+    // set timeout
+    timeval timeout;
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+
+    int ret;
+
+    while (running){
+        cout << "[Info] Ready to select server fd" << endl;
+
+        ret = select(MAX_CONN_QUEUE + 1, &set, NULL, NULL, &timeout);
+        if(ret == -1) {
+            // error occurred
+            perror("Error during server select operation: ");
+            exit(EXIT_FAILURE);
+        }
+        else if(ret == 0) {
+            // select timeout occurred
+            timeout.tv_sec = 5;
+            FD_ZERO(&set); // clear set
+            FD_SET(server_fd, &set); // add server descriptor on set
+
+            // timeout occurred
+            if(!running) cout << "[Info] Timeout occurred, closing server fd" << endl;
+        }else{
+            // connection incoming
+            if(running){
+                cout << "[Info] Ready to accept connection." << endl;
+
+                int client_fd = accept(server_fd, NULL, NULL);
+                if(client_fd < 0){
+                    perror("Error accepting request from client: ");
+                    exit(EXIT_FAILURE);
+                }
+
+                cout << "[Success] Accepted new connection from a client." << endl;
+
+                // client connection helndler
+                thread* client = new thread(connection_handler,client_fd);
+                connection[client] = NULL;
+
+                //connection.push_back(client);
+                cout << "[Info] Pushed new thread in connection list" << endl;
+            }
+            else{
+                cout << " Connection incoming during server close. " << endl;
+                break;
+            }
+
+        }
+    }
+
+
+    cout << "[Shell] end_connection_routine" << endl;
+
     cmd_thread->join();
-
-    free(cmd_thread);
-    free(conn_thread);
-
-    free(g_users);
-    free(g_chats);
-    free(g_active_users);
-    free(g_active_chat);
 
 
 
     cout << "Connection closed..." << endl;
-    if( close(serverSd) < 0){ // this cause an error on accept
+    if(close(server_fd) < 0){ // this cause an error on accept
         perror("Error during close server socket");
         exit(EXIT_FAILURE);
     }
 
-    return 0;
+
+    delete cmd_thread;
+
+    for(user* &u : *g_users) delete u;
+    delete g_users;
+
+    for (user* &u : *g_active_users) delete u;
+    delete g_active_users;
+
+    // free thread
+    for (const auto &pair : connection) delete pair.first;
+
+    return EXIT_SUCCESS;
 }

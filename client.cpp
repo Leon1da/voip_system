@@ -91,6 +91,9 @@ int main(int argc, char *argv[])
     t_send->join();
     t_rec->join();
 
+    delete t_rec;
+    delete t_send;
+
 
     if(close(clientSd) < 0){
         perror("Error during close socket operation: ");
@@ -98,5 +101,5 @@ int main(int argc, char *argv[])
     }
     cout << "[Success] Connection closed." << endl;
 
-    return 0;
+    return EXIT_SUCCESS;
 }
