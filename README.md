@@ -14,7 +14,7 @@ In qualunque momento l'utente puo inviare "return" per tornare al menu principal
 
 - HOW
 - Client 
-Il client e` sviluppato in modo tale da permettere all'utente di inviare/ricevere messaggi contemporaneamente.
+Il client e' sviluppato in modo tale da permettere all'utente di inviare/ricevere messaggi contemporaneamente.
 Una volta effettuato il setup della connessione al server, vengono creati due thread, ripettivamente "sender" e "receiver" che gestiscono, uno l'acquisizione dei messaggi da terminale e il loro invio e l'altro la ricezione e stampa a video degli stessi.
 Una volta inviato il comando "exit" il client uscira` rilasciando la memoria allocata.
 
