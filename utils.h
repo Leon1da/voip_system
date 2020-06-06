@@ -15,13 +15,21 @@ using namespace std;
 #define SERVER_ADDRESS "127.0.0.1"
 #define SERVER_PORT 3000
 
-#define MSG_SIZE 512
+#define MSG_SIZE 1024
 #define CMD_SIZE 16
 
 #define USERNAME_MAXLEN 30
 #define PASSWORD_MAXLEN 30
 
 #define MAX_CONN_QUEUE 5
+
+#define LOG 0
+
+// prototipi dei metodi definiti in send_recv.c
+void    send(int socket, const char *msg);
+size_t  recv(int socket, char *buf, size_t buf_len);
+
+
 
 enum TYPE{
     BROADCAST = 0,
@@ -123,7 +131,14 @@ public:
         msg::content = content;
     }
 
+    msg(user mittente, user destinatario, string content){
+        msg::mittente = mittente;
+        msg::destinatario = destinatario;
+        msg::content = content;
+    }
+
     msg(){}
+
     TYPE getType(){
         return type;
     }
@@ -159,11 +174,11 @@ public:
 class chat {
 
 private: list<user> users;
-private: list<string> messages;
+private: list<msg> messages;
 
 
 public:
-    chat(list<user> users, list <string> messages){
+    chat(list<user> users, list <msg> messages){
         chat::users = users;
         chat::messages = messages;
     }
@@ -174,7 +189,7 @@ public:
         return users;
     }
 
-    list <string> getMessages() {
+    list <msg> getMessages() {
         return messages;
     }
 
@@ -182,10 +197,10 @@ public:
         chat::users = users;
     }
 
-    void setMessages(list <string> messages) {
+    void setMessages(list <msg> messages) {
         chat::messages = messages;
     }
-    void addMessage(string msg){
+    void addMessage(msg msg){
         chat::messages.push_back(msg);
     }
 

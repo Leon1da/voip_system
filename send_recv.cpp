@@ -7,13 +7,21 @@
 #include <cstdio>
 #include <cerrno>
 #include <cstdlib>
+#include "utils.h"
 
-#define MSG_SIZE 512
+
+void send_msg(msg p_msg){
+    int dest_fd = p_msg.getDestinatario().getFD();
+    const char *message = p_msg.getContent().c_str();
+
+    send(dest_fd,message);
+}
+
 
 /*
  * Invia il messaggio contenuto nel buffer sulla socket desiderata.
  */
-void send_msg(int socket, const char *msg) {
+void send(int socket, const char *msg) {
     int ret;
     char msg_to_send[MSG_SIZE];
     sprintf(msg_to_send, "%s\n", msg);
@@ -32,6 +40,9 @@ void send_msg(int socket, const char *msg) {
     }
 }
 
+
+
+
 /*
  * Riceve un messaggio dalla socket desiderata e lo memorizza nel
  * buffer buf di dimensione massima buf_len bytes.
@@ -42,7 +53,7 @@ void send_msg(int socket, const char *msg) {
  * connessione in modo inaspettato.
  */
 
-size_t recv_msg(int socket, char *buf, size_t buf_len) {
+size_t recv(int socket, char *buf, size_t buf_len) {
     int ret;
     int bytes_read = 0;
 

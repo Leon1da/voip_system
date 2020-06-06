@@ -4,27 +4,21 @@
 
 #include <iostream>
 #include <string>
-#include <stdio.h>
-#include <sys/types.h>
+#include <cstdio>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <unistd.h>
-#include <string.h>
+#include <cstring>
 #include <netdb.h>
-#include <sys/uio.h>
-#include <sys/time.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <fstream>
 #include <thread>
 #include "utils.h"
-#include "methods.h"
 
 using namespace std;
 bool running = true;
 
+// send msg on socket desc
 void sender(int client_desc){
 
 //    bool openChat = false;
@@ -33,7 +27,7 @@ void sender(int client_desc){
         getline(cin,line);
 
         if(strcmp(line.c_str(),"exit") == 0) running = false;
-        send_msg(client_desc,line.c_str());
+        send(client_desc, line.c_str());
     }
 
     cout << "Sender ready for connection closed" << endl;
@@ -41,6 +35,7 @@ void sender(int client_desc){
 
 }
 
+// recv msg on socket desc
 void receiver(int client_desc){
 
     // create a message buffer
@@ -50,7 +45,7 @@ void receiver(int client_desc){
         memset(msg_buf,0, MSG_SIZE);
         // ricevo messaggio di benvenuto
 
-        int bytesRead = recv_msg(client_desc, msg_buf, MSG_SIZE);
+        int bytesRead = recv(client_desc, msg_buf, MSG_SIZE);
         if(bytesRead > 0) cout << msg_buf << endl;
 
     }
@@ -58,9 +53,10 @@ void receiver(int client_desc){
     cout << "Reciver ready for connection closed" << endl;
 }
 
-//Client side
 int main(int argc, char *argv[])
 {
+    /* connection init */
+
     //setup a socket and connection tools
     struct hostent* host = gethostbyname(SERVER_ADDRESS);
     sockaddr_in sendSockAddr;
@@ -85,21 +81,30 @@ int main(int argc, char *argv[])
     }
     cout << "[Success] Connected to the server." << endl;
 
+    /* end connection init */
 
-    thread* t_rec = new thread(receiver,clientSd);
-    thread* t_send= new thread(sender,clientSd);
+    /* comunication start */
+
+    thread* t_rec = new thread(receiver,clientSd); // for receive msg
+    thread* t_send= new thread(sender,clientSd);    // for send msg
     t_send->join();
     t_rec->join();
+
+    /* end comunication */
 
     delete t_rec;
     delete t_send;
 
+    /* connection close */
 
     if(close(clientSd) < 0){
         perror("Error during close socket operation: ");
         exit(EXIT_FAILURE);
     }
+
     cout << "[Success] Connection closed." << endl;
+
+    /* end connection close */
 
     return EXIT_SUCCESS;
 }

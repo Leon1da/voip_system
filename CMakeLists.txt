@@ -10,7 +10,7 @@ set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 # client
-add_executable(client client.cpp send_recv.cpp methods.h)
+add_executable(client client.cpp send_recv.cpp)
 
 # server
-add_executable(server server.cpp utils.h send_recv.cpp methods.h)
+add_executable(server server.cpp utils.h send_recv.cpp server_methods.h)
