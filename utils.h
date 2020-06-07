@@ -7,10 +7,9 @@
 
 #include <string>
 #include <list>
-#include <string.h>
+#include <cstring>
+#include <iostream>
 
-
-using namespace std;
 
 #define SERVER_ADDRESS "127.0.0.1"
 #define SERVER_PORT 3000
@@ -24,6 +23,12 @@ using namespace std;
 #define MAX_CONN_QUEUE 5
 
 #define LOG 0
+#define USERS_DB "users.txt"
+#define CHATS_DB "chats.txt"
+
+
+
+using namespace std;
 
 // prototipi dei metodi definiti in send_recv.c
 void    send(int socket, const char *msg);
@@ -31,26 +36,19 @@ size_t  recv(int socket, char *buf, size_t buf_len);
 
 
 
-enum TYPE{
-    BROADCAST = 0,
-    UNICAST = 1,
-    AUTH = 2,
-    INFO = 3,
-    CHAT = 4
-
-};
-
 class user;
 class chat;
 class msg;
 
 
 class user {
+
 private: int id;
 private: string username;
 private: string password;
 private: int fd;
 private: bool logged;
+
 public:
     bool operator==(const user &rhs) const {
         return id == rhs.id;
@@ -58,6 +56,26 @@ public:
 
     bool operator!=(const user &rhs) const {
         return !(rhs == *this);
+    }
+
+    /*
+     * Write the member variables to stream objects
+     */
+    friend std::ostream & operator << (std::ostream &out, const user & obj)
+    {
+        out << obj.id << " " << obj.username << " " << obj.password << endl;
+        return out;
+    }
+
+    /*
+    * Read data from stream object and fill it in member variables
+    */
+    friend std::istream & operator >> (std::istream &in,  user &obj)
+    {
+        in >> obj.id;
+        in >> obj.username;
+        in >> obj.password;
+        return in;
     }
 
 public:
@@ -73,7 +91,6 @@ public:
         user::username = username;
         user::password = password;
     }
-
     user(){}
 
     void setLogged(bool log){
@@ -117,31 +134,32 @@ public:
     }
 };
 
-
 class msg{
-private: TYPE type;
 private: user mittente;       //fd
 private: user destinatario;   //fd
 private: string content;
 public:
-    msg(TYPE type, user mittente, user destinatario, string content){
-        msg::type = type;
+    msg( user mittente, user destinatario, string content){
         msg::mittente = mittente;
         msg::destinatario = destinatario;
         msg::content = content;
     }
 
-    msg(user mittente, user destinatario, string content){
-        msg::mittente = mittente;
-        msg::destinatario = destinatario;
-        msg::content = content;
+
+    msg() {
+
     }
 
-    msg(){}
-
-    TYPE getType(){
-        return type;
+    /*
+     * Write the member variables to stream objects
+     */
+    friend std::ostream & operator << (std::ostream &out, const msg & obj)
+    {
+        out << obj.content << endl;
+        return out;
     }
+
+
     user getMittente()  {
         return mittente;
     }
@@ -152,9 +170,6 @@ public:
 
     const string getContent()  {
         return content;
-    }
-    void setType(TYPE type){
-        msg::type = type;
     }
 
     void setMittente(user mittente) {
@@ -176,6 +191,17 @@ class chat {
 private: list<user> users;
 private: list<msg> messages;
 
+    /*
+     * Write the member variables to stream objects
+     */
+    friend std::ostream & operator << (std::ostream &out, const chat & obj)
+    {
+        out << "users:" << endl;
+        for(user u : obj.users) out << u.getUsername();
+        out << "chats:" << endl;
+        for(msg m : obj.messages) out << m;
+        return out;
+    }
 
 public:
     chat(list<user> users, list <msg> messages){

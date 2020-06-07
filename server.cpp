@@ -1,6 +1,9 @@
 //
 // Created by leonardo on 13/05/20.
 //
+
+#include <fstream>
+
 #include <iostream>
 #include <string>
 #include <stdio.h>
@@ -19,9 +22,8 @@
 using namespace std;
 
 // database
-//list<chat*>* g_chats = new list<chat*>();
-list<user*>* g_users = new list<user*>();
-
+list<chat> g_chats;
+list<user> g_users;
 // end database
 
 
@@ -36,6 +38,7 @@ map<thread*,sockaddr_in*> connection;
 
 int server_fd;
 
+
 //gets user u1 and user u2
 // return opened chat from u1 to u2 (or from u2 to u1)
 chat* getChat(user u1, user u2){
@@ -48,20 +51,6 @@ chat* getChat(user u1, user u2){
 
     return nullptr;
 }
-
-
-//// gets user u1 and user u2
-//// return opened chat from u1 to u2
-//chat* getLocalChat(user u1, user u2){
-//    for (chat* &c : *g_active_chat) {
-//        list<user> chat_users = c->getUsers();
-//        user front = chat_users.front();
-//        user back = chat_users.back();
-//        if(front == u1 && back == u2) return c;
-//    }
-//
-//    return nullptr;
-//}
 
 void start_video_chat(user *pUser) {
     string video_chat_msg;
@@ -290,19 +279,19 @@ user* authentication(int client_desc) {
         }
 
         // check username/password
-        for(user* &u : *g_users){
-            if(strcmp(u->getUsername().c_str(),username) == 0 &&
-               strcmp(u->getPassword().c_str(),password) == 0){
-                if(isAlreadyLogged(*u)) send(client_desc, "[SERVER][INFO] Sei gia loggato.");
+        for(user &u : g_users){
+            if(strcmp(u.getUsername().c_str(),username) == 0 &&
+               strcmp(u.getPassword().c_str(),password) == 0){
+                if(isAlreadyLogged(u)) send(client_desc, "[SERVER][INFO] Sei gia loggato.");
                 else{
                     // utente registrato
-                    utente = new user(
-                            u->getId(),
-                            u->getUsername(),
-                            u->getPassword(),
-                            client_desc,
-                            true
-                    );
+                    utente = new user();
+                    utente->setId(u.getId());
+                    utente->setUsername(u.getUsername());
+                    utente->setPassword(u.getPassword());
+                    utente->setFD(client_desc);
+                    utente->setLogged(true);
+
                     // lo metto nella lista di utenti attivi
                     g_active_users->push_back(utente);
                 }
@@ -349,56 +338,54 @@ void shell_routine(){
 
 }
 
-// print chats report
-void session_report(){
-    string report = "<report>\n";
-    for (chat* &c : *g_active_chat) {
-        report.append("\t<chat>\n");
-        list<user> l_users = c->getUsers();
-        report.append("\t\t<users>\n");
-        for(user u : l_users){
-            report.append("\t\t\t<user>").append(u.getUsername()).append("</user>\n");
-        }
-        report.append("\t\t</users>\n");
-        report.append("\t\t<msgs>\n");
-        for (msg &m : c->getMessages()) {
-            report.append("\t\t\t<msg>").append(m.getContent()).append("</msg>\n");
-        }
-        report.append("\t\t</msgs>\n");
-        report.append("\t</chat>\n");
-    }
-    report.append("</report>\n");
-    cout << report << endl;
-    return;
+
+int save_chats_to_db(string filename, list<chat*>* p_chats) {
+    // Open the File
+    if(LOG) cout << "Writing chats to db" << endl;
+    std::ofstream out(filename);
+    for(chat* &u : *p_chats) out << *u;
+    out.close();
+    return EXIT_SUCCESS;
 }
 
+
+int read_users_from_db(string filename){
+
+    if(LOG) cout << "reading users from db" << endl;
+    std::ifstream in(filename);
+    while(!in.eof()){
+        user u;
+        in >> u;
+        g_users.push_back(u);
+    }
+    in.close();
+    return EXIT_SUCCESS;
+
+}
 
 //Server side
 int main(int argc, char *argv[])
 {
 
-    /* todo leggere utenti registrati da xml */
+    cout << "Reading users from db.. " << endl;
+    if(read_users_from_db(USERS_DB) < 0){
+        cerr << "Error during read users" << endl;
+        return EXIT_FAILURE;
+    }
+    cout << "Users read!" << endl;
 
-    user* u1 = new user(10,"leonardo","leonardo");
-    user* u2 = new user(11,"francesco","francesco");
-    user* u3 = new user(12,"matteo","matteo");
-    user* u4 = new user(13,"federico","federico");
-    user* u5 = new user(14,"maria","maria");
-    user* u6 = new user(15,"paolo","paolo");
-    user* u7 = new user(16,"giovanni","giovanni");
-    user* u8 = new user(17,"nino","nino");
 
-    g_users->push_back(u1);
-    g_users->push_back(u2);
-    g_users->push_back(u3);
-    g_users->push_back(u4);
-    g_users->push_back(u5);
-    g_users->push_back(u6);
-    g_users->push_back(u7);
-    g_users->push_back(u8);
+//    cout << "Reading chats from db.. " << endl;
+//    if(read_chats_from_db(CHATS_DB) < 0){
+//        cerr << "Error during read chat" << endl;
+//        return EXIT_FAILURE;
+//    }
+//    cout << "Chats read!" << endl;
 
-    /* todo leggere chat da xml */
-
+    for (chat &c : g_chats) {
+        cout << c.getUsers().front().getUsername();
+        cout << c.getUsers().back().getUsername();
+    }
 
     /* connection setup */
 
@@ -518,25 +505,27 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // print all chats in this sessions
-    session_report();
-
-
+    cout << "Saving chats to database.." << endl;
+    if(save_chats_to_db("chats.txt", g_active_chat) < 0){
+        cerr << "Error during save chats" << endl;
+        return EXIT_FAILURE;
+    }
+    cout << "Chats saved!" << endl;
 
     delete cmd_thread;
 
-    for(user* &u : *g_users) delete u;
-    delete g_users;
 
+    /* local */
     for (user* &u : *g_active_users) delete u;
     delete g_active_users;
 
-
     for (chat* &c : *g_active_chat) delete c;
     delete g_active_chat;
+    /* end local */
 
     // free thread
     for (const auto &pair : connection) delete pair.first;
 
     return EXIT_SUCCESS;
 }
+
