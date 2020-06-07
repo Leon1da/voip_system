@@ -52,6 +52,7 @@ chat* getChat(user u1, user u2){
     return nullptr;
 }
 
+// start new video chat
 void start_video_chat(user *pUser) {
     string video_chat_msg;
     video_chat_msg.append("********************* * VIDEOCHAT * ********************\n");
@@ -60,6 +61,7 @@ void start_video_chat(user *pUser) {
     send(pUser->getFD(), video_chat_msg.c_str());
 }
 
+// show online users message to the user
 void list_users(user *pUser) {
 
     string list_msg = "************************* USERS ************************\n";
@@ -83,6 +85,7 @@ void list_users(user *pUser) {
 
 }
 
+// show the help message to the user
 void help_message(user *pUser) {
 
     string help_msg = "********************      HELP      ********************\n"
@@ -100,6 +103,7 @@ void help_message(user *pUser) {
 
 }
 
+// open new chat with an online user
 user* open_chat(user *newUser) {
 
     string chat_msg;
@@ -154,6 +158,7 @@ user* open_chat(user *newUser) {
     return destUser;
 }
 
+// start the comunicatio between newUser and destUser
 void start_comunication(user* newUser, user* destUser){
 
     cout << "[" << newUser->getUsername() << "] ha aperto la chat con [" << destUser->getUsername() << "]" << endl;
@@ -197,6 +202,7 @@ void start_comunication(user* newUser, user* destUser){
 
 }
 
+// manage connection thread for each client
 void connection_handler(int client_desc){
     /* start auth client */
     user* newUser = authentication(client_desc);
@@ -248,7 +254,7 @@ void connection_handler(int client_desc){
 
 }
 
-// auth client
+// authenticate new client
 user* authentication(int client_desc) {
 
     // invio messaggio benvenuto
@@ -309,6 +315,7 @@ user* authentication(int client_desc) {
 
     return utente;
 }
+
 
 bool isAlreadyLogged(user usr) {
     for (user* &user : *g_active_users) if(*user == usr && user->isLogged()) return true;
@@ -382,10 +389,6 @@ int main(int argc, char *argv[])
 //    }
 //    cout << "Chats read!" << endl;
 
-    for (chat &c : g_chats) {
-        cout << c.getUsers().front().getUsername();
-        cout << c.getUsers().back().getUsername();
-    }
 
     /* connection setup */
 
@@ -482,7 +485,7 @@ int main(int argc, char *argv[])
                 thread* client = new thread(connection_handler,client_fd);
                 connection[client] = NULL;
 
-                //connection.push_back(client);
+
                 if(LOG) cout << "[Info] Pushed new thread in connection list" << endl;
             }
             else{
@@ -514,16 +517,13 @@ int main(int argc, char *argv[])
 
     delete cmd_thread;
 
-
-    /* local */
     for (user* &u : *g_active_users) delete u;
     delete g_active_users;
 
     for (chat* &c : *g_active_chat) delete c;
     delete g_active_chat;
-    /* end local */
 
-    // free thread
+    // free threads
     for (const auto &pair : connection) delete pair.first;
 
     return EXIT_SUCCESS;
