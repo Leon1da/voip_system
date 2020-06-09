@@ -197,7 +197,7 @@ private: list<msg> messages;
     friend std::ostream & operator << (std::ostream &out, const chat & obj)
     {
         out << "users:" << endl;
-        for(user u : obj.users) out << u.getUsername();
+        for(user u : obj.users) out << u.getUsername() << endl;
         out << "chats:" << endl;
         for(msg m : obj.messages) out << m;
         return out;

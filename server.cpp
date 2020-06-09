@@ -167,7 +167,10 @@ void start_comunication(user* newUser, user* destUser){
     while (1){
         int bytesRead = recv(newUser->getFD(), message, sizeof(message));
         if (bytesRead > 0) {
-            if(strcmp(message,"return") == 0) break;    // back on main menu
+            if(strcmp(message,"return") == 0){
+
+                break;    // back on main menu
+            }
             else{
                 string l_msg = "[";
                 l_msg.append(newUser->getUsername()).append("] ").append(message);
@@ -176,13 +179,11 @@ void start_comunication(user* newUser, user* destUser){
                    send(destUser->getFD(), l_msg.c_str());
                     cout << newUser->getUsername() << " sent message to " << destUser->getUsername() << endl;
 
-                    cout << "create message" << endl;
+                    if(LOG) cout << "inserting message in the chat." << endl;
                     /* insert message into chat */
                     msg mess(*newUser,*destUser,l_msg);
-
-                    cout << "add message to chat" << endl;
-
                     getChat(*newUser, *destUser)->addMessage(mess);
+                    if(LOG) cout << "Message inserted into the chat." << endl;
 
                 }
                 else {
@@ -316,12 +317,13 @@ user* authentication(int client_desc) {
     return utente;
 }
 
-
+// chack if user usr is just logged
 bool isAlreadyLogged(user usr) {
     for (user* &user : *g_active_users) if(*user == usr && user->isLogged()) return true;
     return false;
 }
 
+// thread that acquires character written on the console
 void shell_routine(){
 
     cout << "[Shell] start_shell_routine" << endl;
@@ -346,6 +348,7 @@ void shell_routine(){
 }
 
 
+// save the chats p_chats on the file called filename
 int save_chats_to_db(string filename, list<chat*>* p_chats) {
     // Open the File
     if(LOG) cout << "Writing chats to db" << endl;
@@ -355,7 +358,7 @@ int save_chats_to_db(string filename, list<chat*>* p_chats) {
     return EXIT_SUCCESS;
 }
 
-
+// read registered users from file called filename
 int read_users_from_db(string filename){
 
     if(LOG) cout << "reading users from db" << endl;

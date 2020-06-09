@@ -18,9 +18,7 @@ void send_msg(msg p_msg){
 }
 
 
-/*
- * Invia il messaggio contenuto nel buffer sulla socket desiderata.
- */
+// sends the message contained in the buffer msg at socket descriptor socket
 void send(int socket, const char *msg) {
     int ret;
     char msg_to_send[MSG_SIZE];
@@ -43,39 +41,29 @@ void send(int socket, const char *msg) {
 
 
 
-/*
- * Riceve un messaggio dalla socket desiderata e lo memorizza nel
- * buffer buf di dimensione massima buf_len bytes.
- *
- * La fine di un messaggio in entrata è contrassegnata dal carattere
- * speciale '\n'. Il valore restituito dal metodo è il numero di byte
- * letti ('\n' escluso), o -1 nel caso in cui il client ha chiuso la
- * connessione in modo inaspettato.
- */
-
+// receive message from socket descriptor socket and save that on buffer buf of size buf_size
 size_t recv(int socket, char *buf, size_t buf_len) {
     int ret;
     int bytes_read = 0;
 
-    // messaggi più lunghi di buf_len bytes vengono troncati
+
     while (bytes_read <= buf_len) {
         ret = recv(socket, buf + bytes_read, 1, 0);
 
-        if (ret == 0) return -1; // il client ha chiuso la socket
-        if (ret == -1 && errno == EINTR) continue;
+        if (ret == 0) return -1; // client close the socket
+        if (ret == -1 && errno == EINTR) continue; // error during recv
         if(ret < 0){
             perror("Error during recv_msg operation!");
             exit(EXIT_FAILURE);
         }
 
-        // controllo ultimo byte letto
-        if (buf[bytes_read] == '\n') break; // fine del messaggio: non incrementare bytes_read
+
+        if (buf[bytes_read] == '\n') break; //end of message
 
         bytes_read++;
     }
 
-    /* Quando un messaggio viene ricevuto correttamente, il carattere
-     * finale '\n' viene sostituito con un terminatore di stringa. */
+    // replace last character of message ('\n') with string terminator ('\0')
     buf[bytes_read] = '\0';
-    return bytes_read; // si noti che ora bytes_read == strlen(buf)
+    return bytes_read;
 }
