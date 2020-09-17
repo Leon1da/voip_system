@@ -44,7 +44,8 @@ enum CODE{
     CHAT = 1006,
     USERS = 1007,
     QUIT = 1008,
-    VIDEO = 1009
+    VIDEO = 1009,
+    BROADCAST = 1010
 };
 
 

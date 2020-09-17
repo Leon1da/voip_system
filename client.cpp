@@ -15,6 +15,7 @@
 #include <thread>
 #include <list>
 #include <csignal>
+#include <regex>
 
 #include "config.h"
 
@@ -26,7 +27,7 @@ void udp_close();
 
 bool client_authentication();
 
-void recv_msg();
+void receiver();
 
 void client_chat();
 
@@ -42,6 +43,10 @@ void sender();
 
 
 void print_info_message();
+
+void client_audio();
+
+void print_message(char *msg);
 
 int  udp_socket;
 struct sockaddr_in servaddr;
@@ -61,17 +66,17 @@ int main(int argc, char *argv[])
     udp_init();
 
     // authentication
-    if(!client_authentication()){
-        udp_close();
-        return EXIT_SUCCESS;
-    }
+    while (!client_authentication());
+//    if(!client_authentication()){
+//        udp_close();
+//        return EXIT_SUCCESS;
+//    }
+
+    client_status = SUCCESS;
 
     cout << "Welcome " << username << endl;
 
-    print_info_message();
-
-    int ret;
-
+    // Handles writing to the shell
     thread send_thread(sender);
 
     fd_set set;
@@ -82,30 +87,24 @@ int main(int argc, char *argv[])
     timeout.tv_sec = 5;
     timeout.tv_usec = 0;
 
-
     running = true;
     while(running){
 
-        ret = select(MAX_CONN_QUEUE + 1, &set, NULL, NULL, &timeout);
-        if(ret == -1) {
+        int ret = select(MAX_CONN_QUEUE + 1, &set, NULL, NULL, &timeout);
+        if(ret < 0) {
             if(errno == EINTR) continue;
-            // error occurred
             perror("Error during select operation: ");
             exit(EXIT_FAILURE);
-        }
-        else if(ret == 0) {
-            // cout << "Timeout occurred." << endl;
-            // select timeout occurred
+        }else if(ret == 0) {
+            // timeout occurred
             timeout.tv_sec = 5;
             FD_ZERO(&set); // clear set
             FD_SET(udp_socket, &set); // add server descriptor on set
             // timeout occurred
-            if(!running) cout << "[Info] Timeout occurred, closing server fd" << endl;
+            if(!running) cout << "[Info] Timeout occurred, closing client." << endl;
         }else {
-            // connection incoming
-            cout << "Data is available now." << endl;
-            //receive message from clients
-            recv_msg();
+            // available data
+            receiver();
         }
 
     }
@@ -122,6 +121,11 @@ void print_info_message() {
     cout << "Type <users> to see users online. " << endl
             << "Type <chat> to send message. " << endl
             << "Type <quit> to disconnect." << endl;
+}
+
+void print_message(char *msg) {
+    cout << "[ " << msg << " ][ " << msg + MSG_H_CODE_SIZE << " ][ " << msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE << " ][ "
+         << msg + MSG_HEADER_SIZE << " ]" << endl;
 }
 
 
@@ -141,8 +145,8 @@ void client_quit() {
     snprintf(msg, MSG_H_CODE_SIZE, "%d", CODE::QUIT);
     memcpy(msg + MSG_H_CODE_SIZE, username.c_str(), MSG_H_SRC_SIZE);
 
-    cout << "Message: " << msg << " - " << msg + MSG_H_CODE_SIZE << endl;
-
+    cout << "send: ";
+    print_message(msg);
 
     int ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
     if(ret < 0){
@@ -161,6 +165,9 @@ void client_users() {
     sprintf(msg, "%d", CODE::USERS);
     // msg src
     memcpy(msg + MSG_H_CODE_SIZE, username.c_str(), MSG_H_SRC_SIZE);
+
+    cout << "send: ";
+    print_message(msg);
 
     int ret;
     ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
@@ -194,6 +201,9 @@ void client_chat() {
     cout << "Type message: " << endl;
     read(0,msg + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
 
+    cout << "send: ";
+    print_message(msg);
+
     int ret;
     ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
     if(ret < 0){
@@ -206,15 +216,22 @@ void client_chat() {
 bool client_authentication() {
     client_status = CODE::AUTHENTICATION;
 
+    regex r("[a-zA-Z0-9]+ [a-zA-Z0-9]+");
+
     cout << "Digit <username> <password> for access to service." << endl;
     char credential[MSG_CONTENT_SIZE];
     cin.getline(credential, MSG_CONTENT_SIZE);
+
+    if(!regex_match(credential, r)){
+        cout << "No pattern mathing (<username> <password>)." << endl;
+        return false;
+    }
 
     char msg[MSG_SIZE];
     sprintf(msg, "%d", CODE::AUTHENTICATION);
     sprintf(msg + MSG_HEADER_SIZE, "%s", credential);
 
-    cout << "Code: " << msg << " - Credential: " << msg + MSG_HEADER_SIZE << endl;
+    print_message(msg);
 
     int ret;
     ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
@@ -222,8 +239,6 @@ bool client_authentication() {
         perror("Error during send operation");
         exit(EXIT_FAILURE);
     }
-
-    cout << "Message sent." << endl;
 
     // clear buffer
     memset(msg, 0, MSG_SIZE);
@@ -235,8 +250,11 @@ bool client_authentication() {
         exit(EXIT_FAILURE);
     }
 
-    // response
-    cout << "Server response - Code: " << msg << " - Message: " << msg + MSG_HEADER_SIZE << endl;
+
+    print_message(msg);
+
+    cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
+
 
     char code[MSG_H_CODE_SIZE];
     memcpy(code, msg, MSG_H_CODE_SIZE);
@@ -251,7 +269,7 @@ bool client_authentication() {
 
 }
 
-void recv_msg() {
+void receiver() {
 
     int ret;
 
@@ -262,33 +280,31 @@ void recv_msg() {
         exit(EXIT_FAILURE);
     }
 
+    cout << "recv: ";
+    print_message(msg);
+
     char code[MSG_H_CODE_SIZE];
     memcpy(code, msg, MSG_H_CODE_SIZE);
 
+
     CODE code_ = (CODE) atoi(code);
     switch (code_) {
+        case BROADCAST:
+            cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
+            break;
         case CHAT:
-
-            char src[MSG_H_SRC_SIZE];
-            memcpy(src, msg + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
-
-            char content[MSG_CONTENT_SIZE];
-            memcpy(content, msg + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
-
-            cout << "[" << src << "]" << content << endl;
+            cout << "[" << msg + MSG_H_CODE_SIZE << "] " << msg + MSG_HEADER_SIZE << endl;
             break;
         case QUIT:
             running = false;
             break;
-
         case USERS:
-
             // [TODO] update logged_users when arrive message (USERS)
-            cout << "Logged users:\n " << msg + MSG_HEADER_SIZE << endl;
+            cout << "Logged users:" << endl << msg + MSG_HEADER_SIZE << endl;
             break;
 
         case ERROR:
-            cout << msg + MSG_HEADER_SIZE << endl;
+            cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
         default:
             break;
     }
@@ -298,10 +314,8 @@ void recv_msg() {
 }
 
 void sender(){
-
-    cout << "sender" << endl;
-
     while (running){
+        print_info_message();
 
         string line;
         getline(cin,line);
@@ -310,9 +324,13 @@ void sender(){
         else if(line.compare("users") == 0 ) client_users();
         else if(line.compare("quit") == 0 ) client_quit();
         else if(line.compare("video") == 0 ) client_video();
+        else if(line.compare("audio") == 0 ) client_audio();
 
 
     }
+}
+
+void client_audio() {
 
 }
 
