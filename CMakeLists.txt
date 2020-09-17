@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 2.8)
-project(client_server_tcp)
+cmake_minimum_required(VERSION 3.16)
+project(chat_udp)
+
 set(CMAKE_CXX_STANDARD 14)
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
@@ -10,7 +11,11 @@ set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 # client
-add_executable(client client.cpp send_recv.cpp)
+add_executable(client client.cpp config.h)
 
 # server
-add_executable(server server.cpp utils.h send_recv.cpp server_methods.h)
+add_executable(server server.cpp config.h)
+
+
+
+

@@ -14,521 +14,359 @@
 #include <string.h>
 #include <sys/time.h>
 #include <thread>
-#include "utils.h"
-#include "server_methods.h"
-
 #include <map>
+#include <list>
+
+#include "config.h"
 
 using namespace std;
 
-// database
-list<chat> g_chats;
-list<user> g_users;
-// end database
+int udp_socket;
 
+list<user> users;
 
-list<user*>* g_active_users = new list<user*>();
-list<chat*>* g_active_chat = new list<chat*>();
+list<user*> logged_users;
 
-
-
-bool running = true;
-// one thread for each incoming connection
-map<thread*,sockaddr_in*> connection;
-
-int server_fd;
-
-
-//gets user u1 and user u2
-// return opened chat from u1 to u2 (or from u2 to u1)
-chat* getChat(user u1, user u2){
-    for (chat* &c : *g_active_chat) {
-        list<user> chat_users = c->getUsers();
-        user front = chat_users.front();
-        user back = chat_users.back();
-        if(front == u1 || back == u1 && front == u2 || back == u2) return c;
-    }
-
-    return nullptr;
-}
-
-// start new video chat
-void start_video_chat(user *pUser) {
-    string video_chat_msg;
-    video_chat_msg.append("********************* * VIDEOCHAT * ********************\n");
-    video_chat_msg.append("********************************************************\n");
-
-    send(pUser->getFD(), video_chat_msg.c_str());
-}
-
-// show online users message to the user
-void list_users(user *pUser) {
-
-    string list_msg = "************************* USERS ************************\n";
-
-    if(g_active_users->size() > 1){
-        list_msg.append("* Utenti Online:                                       *\n");
-        for (user* &user : *g_active_users) {
-            if(*user != *pUser && user->isLogged()){
-                list_msg.append(string("* - "));
-                list_msg.append(user->getUsername());
-                list_msg.append("                                           *\n");
-            }
-        }
-    } else{
-        list_msg.append("* Non ci sono altri utenti online                      *\n");
-    }
-
-    list_msg.append("********************************************************\n");
-    send(pUser->getFD(), list_msg.c_str());
-
-
-}
-
-// show the help message to the user
-void help_message(user *pUser) {
-
-    string help_msg = "********************      HELP      ********************\n"
-                        "* Benvenuto/a nella chat.                              *\n"
-                        "* Comandi disponibili:                                 *\n"
-                        "* - users - mostra gli utenti online                   *\n"
-                        "* - video - (coming soon)                              *\n"
-                        "* - chat - apre una chat con un utente online          *\n"
-                        "*   - return - esce da una chat aperta                 *\n"
-                        "* - help - mostra questo messaggio                     *\n"
-                        "* - exit - logout                                      *\n"
-                        "********************************************************\n";
-
-    send(pUser->getFD(), help_msg.c_str());
-
-}
-
-// open new chat with an online user
-user* open_chat(user *newUser) {
-
-    string chat_msg;
-    chat_msg.append("********************* *   CHAT    * ********************\n");
-    chat_msg.append("* Seleziona l'utente con cui vuoi chattare             *\n");
-    chat_msg.append("* return - per tornare al menu` principale             *\n");
-    chat_msg.append("* users - per vedere gli utenti online                 *\n");
-    chat_msg.append("********************************************************\n");
-
-    send(newUser->getFD(), chat_msg.c_str());
-
-    user* destUser = nullptr;
-    while (destUser == nullptr) {
-
-        char buf_username_dest[USERNAME_MAXLEN];
-        int bytesRead = recv(newUser->getFD(), buf_username_dest, USERNAME_MAXLEN);
-        if (bytesRead > 0) {
-
-            if(strcmp(buf_username_dest, "return") == 0) return nullptr; // back
-            if(strcmp(buf_username_dest, "users") == 0) list_users(newUser); // show online users
-            else{
-                // check if users is online
-                for (user* &u : *g_active_users) {
-                    if (u->getUsername() == buf_username_dest && u->getUsername() != newUser->getUsername()) {
-                        destUser = u;
-                        break;
-                    }
-                }
-                if (destUser == nullptr)
-                    send(newUser->getFD(), "[SERVER][WARNING] L'utente che hai selezionato non e` online");
-                else{
-                    string alert_msg ="";
-                    alert_msg.append("[SERVER][SUCCESS] ").append(destUser->getUsername()).append(" e` online, scrivi qualcosa");
-                    send(newUser->getFD(), alert_msg.c_str());
-                    alert_msg = "";
-                    alert_msg.append("[SERVER][INFO] new incoming chat from ").append(newUser->getUsername());
-                    send(destUser->getFD(), alert_msg.c_str());
-
-                    // check if just exist a persistent chat
-                    chat* l_chat = getChat(*newUser, *destUser);
-                    if(l_chat == nullptr){
-                        l_chat = new chat({*newUser,*destUser},{});
-                        cout << "Push global and local " <<endl;
-                        g_active_chat->push_back(l_chat);    // push into persistent chat
-                        cout << "Pushed global and local" << endl;
-                    }
-                }
-            }
-        }
-     }
-
-    return destUser;
-}
-
-// start the comunicatio between newUser and destUser
-void start_comunication(user* newUser, user* destUser){
-
-    cout << "[" << newUser->getUsername() << "] ha aperto la chat con [" << destUser->getUsername() << "]" << endl;
-
-    char message[MSG_SIZE];
-    while (1){
-        int bytesRead = recv(newUser->getFD(), message, sizeof(message));
-        if (bytesRead > 0) {
-            if(strcmp(message,"return") == 0){
-
-                break;    // back on main menu
-            }
-            else{
-                string l_msg = "[";
-                l_msg.append(newUser->getUsername()).append("] ").append(message);
-
-                if(destUser->isLogged()){
-                   send(destUser->getFD(), l_msg.c_str());
-                    cout << newUser->getUsername() << " sent message to " << destUser->getUsername() << endl;
-
-                    if(LOG) cout << "inserting message in the chat." << endl;
-                    /* insert message into chat */
-                    msg mess(*newUser,*destUser,l_msg);
-                    getChat(*newUser, *destUser)->addMessage(mess);
-                    if(LOG) cout << "Message inserted into the chat." << endl;
-
-                }
-                else {
-
-                    string alert_msg = "[SERVER][INFO] ";
-                    alert_msg.append(destUser->getUsername());
-                    alert_msg.append(" si e` disconnesso.");
-                    send(newUser->getFD(), alert_msg.c_str());
-                    break;
-                }
-            }
-        }
-
-    }
-    send(newUser->getFD(), "Sei nel menu principale");
-    help_message(newUser);
-
-}
-
-// manage connection thread for each client
-void connection_handler(int client_desc){
-    /* start auth client */
-    user* newUser = authentication(client_desc);
-    if(newUser == nullptr){
-        cout << "Errore inaspettato chiusura server" << endl;
-        exit(EXIT_FAILURE);
-    }
-    /* end auth client */
-
-    // start chat session
-    cout << newUser->getUsername() << " si e` autenticato." <<endl;
-
-    // mostra azioni disponibili
-    help_message(newUser);
-
-    string msg;
-
-    char cmd_buf[CMD_SIZE];
-    while (1){
-        int byteRead = recv(newUser->getFD(), cmd_buf, CMD_SIZE);
-        if(byteRead > 0){
-            if(strcmp(cmd_buf,"help") == 0) help_message(newUser);
-            else if(strcmp(cmd_buf,"users") == 0) list_users(newUser);
-            else if(strcmp(cmd_buf,"chat") == 0){
-                user* newDest = open_chat(newUser);
-                if(newDest != nullptr) start_comunication(newUser, newDest);
-
-            }
-            else if(strcmp(cmd_buf,"video") == 0) start_video_chat(newUser);
-            else if(strcmp(cmd_buf,"exit") == 0) {
-                msg = "";
-                msg.append("[SERVER] Alla prossima!");
-                send(newUser->getFD(), msg.c_str());
-                break;
-            }
-            else{
-                msg = "";
-                msg.append("[SERVER][INFO] Comando sconosciuto\n");
-                msg.append("[SERVER][INFO] help - mostra le azioni disponibili");
-                send(newUser->getFD(), msg.c_str());
-            }
-
-        }
-    }
-
-    cout << newUser->getUsername() << " ha lasciato la chat." << endl;
-    newUser->setLogged(false);
-
-
-}
-
-// authenticate new client
-user* authentication(int client_desc) {
-
-    // invio messaggio benvenuto
-    string auth_msg = "******************** AUTHENTICATION ********************\n"
-                      "* Benvenuto, effettua il login per iniziare a chattare.*\n";
-    send(client_desc, auth_msg.c_str());
-
-    user* utente = nullptr;
-    while (utente == nullptr){
-
-        // username
-        auth_msg = "* Inserisci username:                                  *\n";
-        send(client_desc, auth_msg.c_str());
-        char username[USERNAME_MAXLEN];
-        if(recv(client_desc, username, sizeof(username)) < 0){
-            cout << "errore username";
-            return nullptr;
-        }
-
-        // password
-        auth_msg = "* Inserisci password:                                  *";
-        send(client_desc, auth_msg.c_str());
-        char password[PASSWORD_MAXLEN];
-        if(recv(client_desc, password, sizeof(password)) < 0){
-            //errore
-            cout << "errore password";
-            return nullptr;
-        }
-
-        // check username/password
-        for(user &u : g_users){
-            if(strcmp(u.getUsername().c_str(),username) == 0 &&
-               strcmp(u.getPassword().c_str(),password) == 0){
-                if(isAlreadyLogged(u)) send(client_desc, "[SERVER][INFO] Sei gia loggato.");
-                else{
-                    // utente registrato
-                    utente = new user();
-                    utente->setId(u.getId());
-                    utente->setUsername(u.getUsername());
-                    utente->setPassword(u.getPassword());
-                    utente->setFD(client_desc);
-                    utente->setLogged(true);
-
-                    // lo metto nella lista di utenti attivi
-                    g_active_users->push_back(utente);
-                }
-                break;
-            }
-        }
-
-
-        if(utente == nullptr) send(client_desc, "[SERVER][WARNING] Login Fallito riprova.");
-        else send(client_desc, "[SERVER][SUCCESS] Login avvenuto con successo");
-
-    }
-
-    send(client_desc, "********************************************************\n");
-
-    return utente;
-}
-
-// chack if user usr is just logged
-bool isAlreadyLogged(user usr) {
-    for (user* &user : *g_active_users) if(*user == usr && user->isLogged()) return true;
-    return false;
-}
-
-// thread that acquires character written on the console
-void shell_routine(){
-
-    cout << "[Shell] start_shell_routine" << endl;
-
-    while (1){
-        string line;
-        getline(cin,line);
-        if(strcmp(line.c_str(),"shutdown") == 0){
-            cout << "[Shell] Wait until all client leave chat.." << endl;
-
-            // join thread
-            for (const auto &pair : connection) pair.first->join();
-
-            running = false;
-            break;
-        }
-
-    }
-
-    cout << "[Shell] end_shell_routine" << endl;
-
-}
-
-
-// save the chats p_chats on the file called filename
-int save_chats_to_db(string filename, list<chat*>* p_chats) {
-    // Open the File
-    if(LOG) cout << "Writing chats to db" << endl;
-    std::ofstream out(filename);
-    for(chat* &u : *p_chats) out << *u;
-    out.close();
-    return EXIT_SUCCESS;
-}
-
-// read registered users from file called filename
-int read_users_from_db(string filename){
-
-    if(LOG) cout << "reading users from db" << endl;
-    std::ifstream in(filename);
-    while(!in.eof()){
-        user u;
-        in >> u;
-        g_users.push_back(u);
-    }
-    in.close();
-    return EXIT_SUCCESS;
-
-}
-
-//Server side
+struct sockaddr_in servaddr;
+
+void udp_init();
+
+void udp_close();
+
+void server_init();
+
+
+void recv_msg();
+
+void client_chat(sockaddr_in client_addr, char* msg);
+
+user * getUser(string username);
+
+void client_authentication(sockaddr_in client_addr, char *message);
+
+void client_quit(char *msg);
+
+void printLoggedUsers();
+
+void printUsers();
+
+void client_users(sockaddr_in client_addr, char *message);
+
+string get_logged_client_list();
+
+
+void print_message(char *message);
+
 int main(int argc, char *argv[])
 {
-
-    cout << "Reading users from db.. " << endl;
-    if(read_users_from_db(USERS_DB) < 0){
-        cerr << "Error during read users" << endl;
-        return EXIT_FAILURE;
-    }
-    cout << "Users read!" << endl;
-
-
-//    cout << "Reading chats from db.. " << endl;
-//    if(read_chats_from_db(CHATS_DB) < 0){
-//        cerr << "Error during read chat" << endl;
-//        return EXIT_FAILURE;
-//    }
-//    cout << "Chats read!" << endl;
+    cout << "Server setup." << endl;
+    server_init();
+    cout << "Protocol setup." << endl;
+    udp_init();
+    cout << "Server ready." << endl;
+    printUsers();
 
 
-    /* connection setup */
 
-    // setup a socket and connection tools
-    sockaddr_in servAddr;
-    bzero((char*)&servAddr, sizeof(servAddr));
-    servAddr.sin_family = AF_INET;
-    servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servAddr.sin_port = htons(SERVER_PORT);
-
-    // create server socket
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if(server_fd < 0){
-        perror("Error establishing the server socket: ");
-        exit(EXIT_FAILURE);
-    }
-
-
-    // set socket option (reuse address)
-    int reuse = 1;
-    int err = setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    if (err < 0){
-        perror("Error establishing the server socket: ");
-        exit(0);
-    }
-
-    // bind the socket to local address
-    int bindStatus = bind(server_fd, (struct sockaddr*) &servAddr, sizeof(servAddr));
-    if(bindStatus < 0){
-        perror("Error binding socket to local address: ");
-        exit(EXIT_FAILURE);
-    }
-
-    cout << "Waiting for a client to connect..." << endl;
-    // listen on socket
-    if(listen(server_fd, MAX_CONN_QUEUE) < 0){
-        perror("Error listen on server socket: ");
-        exit(EXIT_FAILURE);
-    }
-
-    /* end connection setup */
-
-    /* ready to accept new connection */
-
-    // now server is ready for accept new connections from clients
-
-    // create a thread for manage server with shell
-    // only possible command - shutdown - that shuts down the server
-
-    thread* cmd_thread = new thread(shell_routine);
-
+    int ret;
 
     fd_set set;
     FD_ZERO(&set); // clear set
-    FD_SET(server_fd, &set); // add server descriptor on set
+    FD_SET(udp_socket, &set); // add server descriptor on set
     // set timeout
     timeval timeout;
     timeout.tv_sec = 5;
     timeout.tv_usec = 0;
 
-    int ret;
-
-    while (running){
-        if(LOG) cout << "[Info] Ready to select server fd" << endl;
+    bool running = true;
+    while(running){
 
         ret = select(MAX_CONN_QUEUE + 1, &set, NULL, NULL, &timeout);
         if(ret == -1) {
-            // error occurred
             perror("Error during server select operation: ");
             exit(EXIT_FAILURE);
         }
         else if(ret == 0) {
+             cout << "Timeout occurred." << endl;
             // select timeout occurred
             timeout.tv_sec = 5;
             FD_ZERO(&set); // clear set
-            FD_SET(server_fd, &set); // add server descriptor on set
-
+            FD_SET(udp_socket, &set); // add server descriptor on set
             // timeout occurred
             if(!running) cout << "[Info] Timeout occurred, closing server fd" << endl;
-        }else{
+        }else {
             // connection incoming
-            if(running){
-                if(LOG) cout << "[Info] Ready to accept connection." << endl;
-
-                int client_fd = accept(server_fd, NULL, NULL);
-                if(client_fd < 0){
-                    perror("Error accepting request from client: ");
-                    exit(EXIT_FAILURE);
-                }
-
-                cout << "[Success] Accepted new connection from a client." << endl;
-
-                // client connection helndler
-                thread* client = new thread(connection_handler,client_fd);
-                connection[client] = NULL;
-
-
-                if(LOG) cout << "[Info] Pushed new thread in connection list" << endl;
-            }
-            else{
-                cout << " Connection incoming during server close. " << endl;
-                break;
-            }
-
+            cout << "Data is available now." << endl;
+            //receive message from clients
+            recv_msg();
         }
+
     }
 
 
-    if(LOG) cout << "[Shell] end_connection_routine" << endl;
-
-    cmd_thread->join();
-
-
-    cout << "Connection closed..." << endl;
-    if(close(server_fd) < 0){ // this cause an error on accept
-        perror("Error during close server socket");
-        exit(EXIT_FAILURE);
-    }
-
-    cout << "Saving chats to database.." << endl;
-    if(save_chats_to_db("chats.txt", g_active_chat) < 0){
-        cerr << "Error during save chats" << endl;
-        return EXIT_FAILURE;
-    }
-    cout << "Chats saved!" << endl;
-
-    delete cmd_thread;
-
-    for (user* &u : *g_active_users) delete u;
-    delete g_active_users;
-
-    for (chat* &c : *g_active_chat) delete c;
-    delete g_active_chat;
-
-    // free threads
-    for (const auto &pair : connection) delete pair.first;
+    udp_close();
+    cout << "Server shutdown." << endl;
 
     return EXIT_SUCCESS;
 }
 
+// Functionality
+
+void client_users(sockaddr_in client_addr, char *message) {
+
+    int len = sizeof(client_addr);
+
+    // [TODO] andrebbe splittata la stringa se la sua lunghezza e` maggiore di MSG_CONTENT_SIZE
+    string logged_client_list = get_logged_client_list();
+    cout << "logged_user_list: " << logged_client_list << " - size: " << logged_client_list.size() << endl;
+    memcpy(message + MSG_HEADER_SIZE, logged_client_list.c_str(), MSG_CONTENT_SIZE);
+
+    int ret = sendto(udp_socket, message, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
+    if(ret < 0){
+        perror("Error during send operation: ");
+        exit(EXIT_FAILURE);
+    }
+
+
+
+}
+
+void client_quit(char *message) {
+
+    char src[MSG_H_SRC_SIZE];
+    memcpy(src, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
+
+    cout << "Message: " << message << " - " << message + MSG_H_CODE_SIZE <<  endl;
+
+    user* dest = getUser(src);
+    if(dest == nullptr)
+
+
+    printLoggedUsers();
+
+    list<user*> new_logged_users;
+    for(user* &u: logged_users) if(dest->username.compare(u->username) != 0) new_logged_users.push_back(u);
+    logged_users = new_logged_users;
+
+    printLoggedUsers();
+
+    cout << "User " << src << " left the chat." << endl;
+
+}
+
+void client_authentication(sockaddr_in client_addr, char *message) {
+
+    int ret;
+
+    char content[MSG_CONTENT_SIZE];
+    memcpy(content, message + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
+
+    // todo not good working
+    string content_ = content;
+    string username = content_.substr(0,content_.find(" "));
+    string password = content_.substr(content_.find(" ") + 1, content_.size());
+
+    cout << username << " - " << password << endl;
+
+    user* newUser = new user(0,username, password, client_addr);
+
+
+    bool registered = false;
+    for (user &u : users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) registered = true;
+
+    char msg[MSG_SIZE];
+
+    if(registered){
+        sprintf(msg, "%d", CODE::SUCCESS);
+        sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
+        sprintf(msg + MSG_HEADER_SIZE, "%s", "Login successful.");
+
+        logged_users.push_back(newUser);
+
+    }else {
+        sprintf(msg, "%d", CODE::ERROR);
+        sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed.");
+    }
+
+    socklen_t len = sizeof(newUser->address);
+    ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &newUser->address, len);
+    if(ret < 0){
+        perror("Error during send operation: ");
+        exit(EXIT_FAILURE);
+    }
+
+
+}
+
+void client_chat(sockaddr_in client_addr, char* message){
+
+    int ret;
+
+//    print_message(message);
+
+//     cout << "Message: " << message << " - " << message + MSG_H_CODE_SIZE << " - " << message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE << " - " << message + MSG_HEADER_SIZE << endl;
+    char buf[MSG_H_DST_SIZE];
+    memcpy(buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
+
+    user* dst = getUser(buf);
+
+    socklen_t addr_len;
+    struct sockaddr_in addr;
+
+    if(dst == nullptr){
+//        cout << "User " << message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE << " not found." << endl;
+        sprintf(message,"%d", CODE::ERROR); // set CODE
+        memcpy(message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message + MSG_H_CODE_SIZE, MSG_H_DST_SIZE); // set DST
+        memcpy(message + MSG_HEADER_SIZE, "User not found.", MSG_CONTENT_SIZE);
+
+//        print_message(message);
+        // cout << "Message: " << dst->username << " - " << dst->password << " - " << dst->address.sin_addr.s_addr << " - " << dst->address.sin_port << endl;
+
+        addr = client_addr;
+        addr_len = sizeof(addr);
+
+    }else{
+        cout << "DST: " << dst->username << " - " << dst->password << " - " << dst->address.sin_addr.s_addr << " - " << dst->address.sin_port << endl;
+        addr = dst ->address;
+        addr_len = sizeof(dst->address);
+    }
+
+    ret = sendto(udp_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
+    if(ret < 0){
+        perror("Error during send operation: ");
+        exit(EXIT_FAILURE);
+    }
+
+
+
+}
+
+void print_message(char *message) {
+
+    char code[MSG_H_CODE_SIZE];
+    memcpy(code, message, MSG_H_CODE_SIZE);
+    char src[MSG_H_SRC_SIZE];
+    memcpy(src, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
+    char dst[MSG_H_DST_SIZE];
+    memcpy(dst, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
+    char content[MSG_H_SRC_SIZE];
+    memcpy(content, message + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
+
+    cout << "[ " << code << " ][ " << src << " ][ " << dst << " ]" << endl << "[ " << content << " ]" << endl;
+
+}
+
+void recv_msg() {
+
+    int ret;
+    struct sockaddr_in cliaddr;
+    socklen_t len = sizeof(cliaddr);
+
+    char msg[MSG_SIZE];
+    ret = recvfrom(udp_socket, msg, MSG_SIZE,0, (struct sockaddr*)&cliaddr, &len);
+    if(ret < 0) {
+        perror("Error during send operation");
+        exit(EXIT_FAILURE);
+    }
+
+
+    printLoggedUsers();
+
+
+    char code[MSG_H_CODE_SIZE];
+    memcpy(code, msg, MSG_H_CODE_SIZE);
+    cout << "Message Code: " << code << endl;
+
+    CODE code_ = (CODE) atoi(code);
+    switch (code_) {
+        case AUTHENTICATION:
+            client_authentication(cliaddr, msg);
+            break;
+        case CHAT:
+            client_chat(cliaddr, msg);
+            break;
+        case USERS:
+            client_users(cliaddr, msg);
+            break;
+        case QUIT:
+            client_quit(msg);
+            break;
+        default:
+            break;
+    }
+
+}
+
+// Initialization
+
+void server_init() {
+
+    std::ifstream in("users.txt");
+    if(!in.good()) return;
+
+    while(!in.eof()){
+        user u;
+        in >> u;
+        users.push_back(u);
+    }
+    in.close();
+}
+
+void udp_init() {
+
+    bzero(&servaddr, sizeof(servaddr));
+
+    // Create a UDP Socket
+    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(SERVER_CHAT_PORT);
+    servaddr.sin_family = AF_INET;
+
+    // bind server address to socket descriptor
+    bind(udp_socket, (struct sockaddr*)&servaddr, sizeof(servaddr));
+
+}
+
+void udp_close() {
+    cout << "Connection closed..." << endl;
+    if(close(udp_socket) < 0){ // this cause an error on accept
+        perror("Error during close server socket");
+        exit(EXIT_FAILURE);
+    }
+}
+
+// Utility
+
+void printUsers() {
+
+    cout << "Registered users: " << endl;
+    for(user &u : users){
+        cout << " - " << u.username << " " << u.password << " "
+             << u.address.sin_addr.s_addr << " " << u.address.sin_port
+             << u.address.sin_family << " " << u.address.sin_zero << endl;
+
+    }
+
+}
+
+string get_logged_client_list() {
+    string logged_client_list = "";
+    for(user* &u: logged_users) logged_client_list.append(u->username + "\n");
+    return logged_client_list;
+}
+
+void printLoggedUsers() {
+    cout << "Logged users: " << endl;
+    for(user* &u : logged_users){
+        cout << " - " << u->username << " " << u->password << " "
+             << u->address.sin_addr.s_addr << " " << u->address.sin_port
+             << u->address.sin_family << " " << u->address.sin_zero << endl;
+
+    }
+}
+
+user* getUser(string username) {
+    for(user* &u : logged_users)
+        if(username.compare(u->username) == 0) return u;
+    return nullptr;
+}
