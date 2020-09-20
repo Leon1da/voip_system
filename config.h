@@ -33,6 +33,8 @@
  *
 */
 
+#define LOG 1
+
 using namespace std;
 
 enum CODE{
@@ -48,19 +50,23 @@ enum CODE{
     BROADCAST = 1010
 };
 
-
-
-class user{
+class User{
 
 public:
 
-    user(){};
+    User(){};
 
-    user(int id, string username, string password, sockaddr_in address) {
+    User(int id, string username, string password, sockaddr_in address) {
         this->id = id;
         this->username = username;
         this->password = password;
         this->address = address;
+    }
+
+    User(int id, string username, string password) {
+        this->id = id;
+        this->username = username;
+        this->password = password;
     }
 
     int id;
@@ -68,18 +74,18 @@ public:
     string password;
     sockaddr_in address;
 
-    bool operator==(const user &rhs) const {
+    bool operator==(const User &rhs) const {
         return id == rhs.id;
     }
 
-    bool operator!=(const user &rhs) const {
+    bool operator!=(const User &rhs) const {
         return !(rhs == *this);
     }
 
     /*
      * Write the member variables to stream objects
      */
-    friend std::ostream & operator << (std::ostream &out, const user & obj)
+    friend std::ostream & operator << (std::ostream &out, const User & obj)
     {
         out << obj.id << " " << obj.username << " " << obj.password;
         return out;
@@ -88,7 +94,7 @@ public:
     /*
     * Read data from stream object and fill it in member variables
     */
-    friend std::istream & operator >> (std::istream &in,  user &obj)
+    friend std::istream & operator >> (std::istream &in, User &obj)
     {
         in >> obj.id;
         in >> obj.username;
@@ -97,4 +103,78 @@ public:
     }
 
 };
+
+class Message{
+public:
+    User src;
+    User dst;
+    string text;
+
+    Message(){}
+
+    Message(User src, User dst, string text){
+        this->src = src;
+        this->dst = dst;
+        this->text = text;
+    }
+
+/*
+    * Write the member variables to stream objects
+    */
+    friend std::ostream & operator << (std::ostream &out, const Message & obj)
+    {
+        out << obj.src << " " << obj.dst << " " << obj.text;
+        return out;
+    }
+
+    /*
+    * Read data from stream object and fill it in member variables
+    */
+    friend std::istream & operator >> (std::istream &in, Message &obj)
+    {
+        in >> obj.src;
+        in >> obj.dst;
+        in >> obj.text;
+
+        return in;
+    }
+};
+
+class Chat{
+    public:
+        list<User> users;
+        list<Message> messages;
+
+        Chat(list<User> users, list<Message> messages){
+            this->users = users;
+            this->messages = messages;
+        }
+
+
+    /*
+    * Write the member variables to stream objects
+    */
+    friend std::ostream & operator << (std::ostream &out, const Chat & obj)
+    {
+        for(User u: obj.users) out << u << endl;
+        for (Message m: obj.messages) out << m << endl;
+        return out;
+    }
+
+    /*
+    * Read data from stream object and fill it in member variables
+    */
+//    friend std::istream & operator >> (std::istream &in, Chat &obj)
+//    {
+//
+//        obj.users.push_back((User) in.get());
+//        in >> obj.users.back();
+//        in >> obj.messages.front();
+////        for (User u: obj.users) in >> u;
+////        for (Message m: obj.messages) in >> m;
+//
+//        return in;
+//    }
+};
+
 

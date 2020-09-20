@@ -1,7 +1,7 @@
 //
 // Created by leonardo on 13/05/20.
 //
-
+#include <algorithm>
 #include <fstream>
 
 #include <iostream>
@@ -24,13 +24,17 @@ using namespace std;
 
 int udp_socket;
 
-list<user> users;
+list<Chat*> chats;
 
-list<user*> logged_users;
+list<User> users;
+
+list<User*> logged_users;
+
 
 struct sockaddr_in servaddr;
 
 bool running;
+
 
 void sigintHandler(int sig_num);
 
@@ -47,15 +51,15 @@ void receiver();
 
 void client_chat(sockaddr_in client_addr, char* msg);
 
-user * getUser(string username);
+User * get_logged_user(string username);
 
 void client_authentication(sockaddr_in client_addr, char *message);
 
 void client_quit(char *msg);
 
-void printLoggedUsers();
+void print_logged_users();
 
-void printUsers();
+void print_registered_users();
 
 void client_users(sockaddr_in client_addr, char *message);
 
@@ -70,6 +74,14 @@ bool isLogged(string username);
 
 bool isRegistered(string username, string password);
 
+list<User> read_users_from_file(const string filename);
+
+list<Chat> read_chats_from_file(const string string);
+
+Chat *find_chat(list<User> users);
+
+void print_session_chats();
+
 int main(int argc, char *argv[])
 {
     cout << "Server setup." << endl;
@@ -77,7 +89,7 @@ int main(int argc, char *argv[])
     cout << "Protocol setup." << endl;
     udp_init();
     cout << "Server ready." << endl;
-    printUsers();
+    print_registered_users();
 
     fd_set set;
     FD_ZERO(&set); // clear set
@@ -111,11 +123,23 @@ int main(int argc, char *argv[])
 
     }
 
+    cout << "Print report." << endl;
+    print_session_chats();
 
     udp_close();
     cout << "Server shutdown." << endl;
 
     return EXIT_SUCCESS;
+}
+
+void print_session_chats() {
+    for(Chat* c: chats){
+        cout << "Users: ";
+        for(User u: c->users) cout << u.username << endl;
+        cout << "Messages: ";
+        for(Message m: c->messages) cout << m.text << endl;
+    }
+
 }
 
 // Functionality
@@ -128,16 +152,13 @@ void client_users(sockaddr_in client_addr, char *message) {
     string logged_client_list = get_logged_client_list();
     memcpy(message + MSG_HEADER_SIZE, logged_client_list.c_str(), MSG_CONTENT_SIZE);
 
-    cout << "send: ";
-    print_message(message);
+    if(LOG) print_message(message);
 
     int ret = sendto(udp_socket, message, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
     if(ret < 0){
         perror("Error during send operation: ");
         exit(EXIT_FAILURE);
     }
-
-
 
 }
 
@@ -146,24 +167,17 @@ void client_quit(char *message) {
     char src[MSG_H_SRC_SIZE];
     memcpy(src, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
 
-    user* dest = getUser(src);
+    User* dest = get_logged_user(src);
     if(dest == nullptr)
 
-    printLoggedUsers();
+    if(LOG) print_logged_users();
 
     logged_users.remove(dest);
 
-//    list<user*> new_logged_users;
-//    for(user* &u: logged_users) if(dest->username.compare(u->username) != 0) new_logged_users.push_back(u);
-//    logged_users = new_logged_users;
-
-    printLoggedUsers();
+    if(LOG) print_logged_users();
 
 
-    string msg = "User ";
-    msg.append(src);
-    msg.append(" left the chat.");
-
+    string msg = string("User ") + src + string(" left the chat.");
     cout << msg << endl;
 
     broadcast_send(msg);
@@ -178,7 +192,7 @@ void broadcast_send(string message) {
     sprintf(msg, "%d", CODE::BROADCAST);
     memcpy(msg + MSG_HEADER_SIZE, message.c_str(), MSG_CONTENT_SIZE);
 
-    for(user* u : logged_users){
+    for(User* u : logged_users){
         socklen_t len = sizeof(u->address);
         ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &u->address, len);
         if(ret < 0){
@@ -201,8 +215,7 @@ void client_authentication(sockaddr_in client_addr, char *message) {
     string username = content_.substr(0,content_.find(" "));
     string password = content_.substr(content_.find(" ") + 1, content_.size());
 
-    cout << username << " - " << password << endl;
-
+    if(LOG) cout << username << " - " << password << " request login." << endl;
 
     socklen_t len = sizeof(client_addr);
 
@@ -214,7 +227,7 @@ void client_authentication(sockaddr_in client_addr, char *message) {
             sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
             sprintf(msg + MSG_HEADER_SIZE, "%s", "Login successful.");
 
-            user* newUser = new user(0,username, password, client_addr);
+            User* newUser = new User(0, username, password, client_addr);
             logged_users.push_back(newUser);
 
 
@@ -237,75 +250,40 @@ void client_authentication(sockaddr_in client_addr, char *message) {
         exit(EXIT_FAILURE);
     }
 
-//    user* newUser = new user(0,username, password, client_addr);
-//
-//
-//    bool registered = false;
-//    for (user &u : users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) registered = true;
-//
-//    char msg[MSG_SIZE];
-//
-//    if(registered){
-//        sprintf(msg, "%d", CODE::SUCCESS);
-//        sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
-//        sprintf(msg + MSG_HEADER_SIZE, "%s", "Login successful.");
-//
-//        logged_users.push_back(newUser);
-//
-//    }else {
-//        sprintf(msg, "%d", CODE::ERROR);
-//        sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed.");
-//    }
-
-//    socklen_t len = sizeof(newUser->address);
-//    ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &newUser->address, len);
-//    if(ret < 0){
-//        perror("Error during send operation: ");
-//        exit(EXIT_FAILURE);
-//    }
-
-
-}
-
-bool isRegistered(string username, string password) {
-    for (user &u : users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) return true;
-    return false;
-}
-
-bool isLogged(string username) {
-    for(user* u : logged_users) if(username.compare(u->username) == 0) return true;
-    return false;
 }
 
 void client_chat(sockaddr_in client_addr, char* message){
 
     int ret;
 
-//    print_message(message);
+    char src_buf[MSG_H_DST_SIZE];
+    memcpy(src_buf, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
 
-//     cout << "Message: " << message << " - " << message + MSG_H_CODE_SIZE << " - " << message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE << " - " << message + MSG_HEADER_SIZE << endl;
-    char buf[MSG_H_DST_SIZE];
-    memcpy(buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
+    User* src = get_logged_user(src_buf);
 
-    user* dst = getUser(buf);
+    char dst_buf[MSG_H_DST_SIZE];
+    memcpy(dst_buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
+
+    User* dst = get_logged_user(dst_buf);
 
     socklen_t addr_len;
     struct sockaddr_in addr;
 
     if(dst == nullptr){
-//        cout << "User " << message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE << " not found." << endl;
+
+        if(LOG) cout << "dst: " << dst_buf << " not found." << endl;
+
         sprintf(message,"%d", CODE::ERROR); // set CODE
         memcpy(message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message + MSG_H_CODE_SIZE, MSG_H_DST_SIZE); // set DST
         memcpy(message + MSG_HEADER_SIZE, "User not found.", MSG_CONTENT_SIZE);
-
-//        print_message(message);
-        // cout << "Message: " << dst->username << " - " << dst->password << " - " << dst->address.sin_addr.s_addr << " - " << dst->address.sin_port << endl;
 
         addr = client_addr;
         addr_len = sizeof(addr);
 
     }else{
-        cout << "DST: " << dst->username << " - " << dst->password << " - " << dst->address.sin_addr.s_addr << " - " << dst->address.sin_port << endl;
+        if(LOG) cout << src << " send message to " << dst << endl;
+        if(LOG) cout << "dst information: " << dst->username << " - " << dst->password << " - " << dst->address.sin_addr.s_addr << " - " << dst->address.sin_port << endl;
+
         addr = dst ->address;
         addr_len = sizeof(dst->address);
     }
@@ -318,6 +296,71 @@ void client_chat(sockaddr_in client_addr, char* message){
 
 
 
+//    Message m(*src, *dst, message + MSG_HEADER_SIZE);
+//    cout << "Find chat." << endl;
+//    Chat* chat = find_chat(list<User>(src, dst));
+//
+//    if(chat == nullptr){
+//        cout << "chat not found." << endl;
+//        list<User> l1;
+//        l1.push_back(*src);
+//        l1.push_back(*dst);
+//
+//        list<Message> l2;
+//        l2.push_back(m);
+//        Chat* chat = new Chat(l1, l2);
+//        chats.push_back(chat);
+//
+//    } else{
+//
+//        cout << "chat found." << endl;
+//        chat->messages.push_back(m);
+//    }
+
+
+
+}
+
+bool isRegistered(string username, string password) {
+    for (User &u : users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) return true;
+    return false;
+}
+
+bool isLogged(string username) {
+    for(User* u : logged_users) if(username.compare(u->username) == 0) return true;
+    return false;
+}
+
+bool contains(list<User> l, User e){
+    bool found = false;
+    while (!l.empty() && !found)
+    {
+        found = (l.front() == e);
+        l.pop_front();
+    }
+    return found;
+}
+
+list<User> intersect(list<User> l1 ,list<User> l2)
+{
+
+    User cur;
+    list<User> intersection;
+    while(!l1.empty())
+    {
+        cur = l1.front();
+
+        if(contains(l2, cur))
+            intersection.push_back(cur);
+        l1.pop_front();
+    }
+    return intersection;
+}
+
+Chat *find_chat(list<User> users) {
+    for(Chat* c : chats)
+        if(intersect(c->users, users).size() == c->users.size() == users.size()) return c;
+    return nullptr;
 }
 
 
@@ -346,18 +389,23 @@ void receiver() {
     CODE code_ = (CODE) atoi(code);
     switch (code_) {
         case AUTHENTICATION:
+            if(LOG) cout << "Authentication message arrived." << endl;
             client_authentication(cliaddr, msg);
             break;
         case CHAT:
+            if(LOG) cout << "Chat message arrived." << endl;
             client_chat(cliaddr, msg);
             break;
         case USERS:
+            if(LOG) cout << "Users message arrived." << endl;
             client_users(cliaddr, msg);
             break;
         case QUIT:
+            if(LOG) cout << "Quit message arrived." << endl;
             client_quit(msg);
             break;
         default:
+            if(LOG) cout << "Default message arrived." << endl;
             break;
     }
 
@@ -367,45 +415,228 @@ void receiver() {
 
 void server_init() {
 
-    cout << "Read user from database." << endl;
-    std::ifstream in("users.txt");
-    if(!in.good()){
-        cout << "Error during read user from database. Exit." << endl;
-        return;
-    }
+    if(LOG) cout << "Read Users from database." << endl;
+    users = read_users_from_file("users.txt");
 
-    while(!in.eof()){
-        user u;
-        in >> u;
-        users.push_back(u);
-    }
-    in.close();
 
-    cout << "Signal handler init." << endl;
+    if(LOG) cout << "Read Chats from database." << endl;
+    // chats = read_chats_from_file("chats.txt");
+
+    if(LOG) cout << "Signal handler init." << endl;
     signal_handler_init();
 }
 
+list<User> read_users_from_file(const string filename) {
+
+    list<User> users_read;
+
+    std::ifstream in(filename);
+    if(!in.good()){
+        cout << "Error during read file: " << filename << endl;
+        return users_read;
+    }
+
+    while(!in.eof()){
+        User u;
+        in >> u;
+        users_read.push_back(u);
+    }
+    in.close();
+
+    return users_read;
+
+}
+
+list<Chat> read_chats_from_file(const string filename) {
+
+    list<Chat> chats_read;
+
+    std::ifstream in(filename);
+    if(!in.good()){
+        cout << "Error during read file: " << filename << endl;
+        return chats_read;
+    }
+
+    string line;
+    getline(in, line, ' ');
+    int num_users = atoi(line.c_str());
+
+    cout << "num_users: " << num_users << endl;
+
+    getline(in, line, ' ');
+    int num_messages = atoi(line.c_str());
+
+    cout << "num_messages: " << num_messages << endl;
+
+    getline(in, line, '\n');
+    cout << "line: " << line << endl;
+
+    list<User> users;
+    for (int i = 0; i < num_users; ++i) {
+        User u;
+        in >> u;
+        users.push_back(u);
+        cout << "User: " << u.id << " " << u.username << " " << u.password << endl;
+    }
+
+    getline(in, line, '\n');
+    cout << "line: " << line << endl;
+
+
+    list<Message> messages;
+    for (int i = 0; i < num_messages; ++i) {
+        User src, dst;
+        in >> src;
+        cout << "src: " << src.id << " " << src.username << " " << src.password << endl;
+        in >> dst;
+        cout << "dst: " << dst.id << " " << dst.username << " " << dst.password << endl;
+
+
+
+        string msg = "";
+        string s;
+        string num_strings;
+        getline(in, num_strings, ' ');
+        cout << "num_strings: " <<num_strings<< endl;
+        for (int j = 0; j < atoi(num_strings.c_str()); ++j) {
+            in >> s;
+            msg.append(s + " ");
+
+        }
+
+        Message m(src,dst,msg);
+
+        messages.push_back(m);
+
+        cout << "Message: " << m.text << endl;
+    }
+
+    Chat c(users, messages);
+//    chats.push_back(c);
+
+    in.close();
+
+//    int user_num, messages_num;
+//    user_num =  atoi(tokens.front().c_str());
+//    tokens.pop_front();
+//    messages_num = atoi(tokens.front().c_str());
+//    tokens.pop_front();
+//
+//
+
+
+
+//    FILE * fp;
+//    char * line = NULL;
+//    size_t len = 0;
+//    ssize_t read;
+//
+//    fp = fopen(filename.c_str(), "r");
+//    if (fp == NULL)
+//        exit(EXIT_FAILURE);
+//
+//    int i = 0;
+//    int users_num = 0;
+//    int messages_num = 0;
+//
+//    Chat chat;
+//    while ((read = getline(&line, &len, fp)) != -1) {
+//        line[strlen(line) - 1] = '\0';
+//        printf("Retrieved line [%s] of length %zu:\n", line, read);
+//
+//        // check if num_user num_messages
+//
+//        char** tokens = (char**) malloc(sizeof(char**));
+//
+//        int j = 0;
+//        /* get the first token */
+//        char* token = strtok(line, " ");
+//        /* walk through other tokens */
+//        while( token != NULL ) {
+//            tokens[j] = token;
+//            printf( "token[%d] = %s\n", j, tokens[j] );
+//            token = strtok(NULL, " ");
+//            j++;
+//        }
+//
+//
+//        if(j == 2){
+//            users_num = atoi(tokens[0]);
+//            messages_num = atoi(tokens[1]);
+//            cout << "Users num: " << users_num << " Messages num: "<< messages_num << endl;
+//        } else{
+//            if(i < users_num) {
+//                User u(atoi(tokens[0]), tokens[1], tokens[2]);
+//                cout << " User:" << u.id << " " << u.username << " " << u.password << endl;
+//                chat.users.push_back(u);
+//            }
+//            else {
+//
+//                User src(atoi(tokens[0]), tokens[1], tokens[2]);
+//                User dst(atoi(tokens[3]), tokens[4], tokens[5]);
+//                cout << "src: " << src.id << " " << src.username << " " << src.password << " " << endl;
+//                cout << "dst: " << dst.id << " " << dst.username << " " << dst.password << " " << endl;
+//                string msg = "";
+//                for (int k = 6; k < j; ++k){
+//                    msg.append(tokens[k]);
+//                    msg.append(" ");
+//                }
+//                Message m(src, dst, msg);
+//                chat.messages.push_back(m);
+//                cout << "Text: " << m.text << endl;
+//
+//                chat.messages.push_back(m);
+//            }
+//            i++;
+//        }
+//
+//        free(tokens);
+//
+//    }
+//
+//    fclose(fp);
+//    if (line)
+//        free(line);
+
+    return chats_read;
+}
+
+
 void udp_init() {
+
+    cout << "Udp protocol setupping..." << endl;
 
     bzero(&servaddr, sizeof(servaddr));
 
     // Create a UDP Socket
+    
     udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if(udp_socket < 0){
+        perror("Error during socket operation.");
+        exit(EXIT_FAILURE);
+    }
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servaddr.sin_port = htons(SERVER_CHAT_PORT);
     servaddr.sin_family = AF_INET;
 
     // bind server address to socket descriptor
-    bind(udp_socket, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    int ret = bind(udp_socket, (struct sockaddr *) &servaddr, sizeof(servaddr));
+    if(ret < 0){
+        perror("Error during bind operation.");
+        exit(EXIT_FAILURE);
+    }
+
+    cout << "Udp protocol configured." << endl;
 
 }
 
 void udp_close() {
-    cout << "Connection closed..." << endl;
+    cout << "Udp socket closing..." << endl;
     if(close(udp_socket) < 0){ // this cause an error on accept
         perror("Error during close server socket");
         exit(EXIT_FAILURE);
     }
+    cout << "Udp socket closed." << endl;
 }
 
 void signal_handler_init() {
@@ -423,7 +654,7 @@ void signal_handler_init() {
 void sigintHandler(int sig_num)
 {
     if(!logged_users.empty()){
-        printLoggedUsers();
+        print_logged_users();
         cout << "Unable to shut down server. there are connected clients." << endl;
     }
     else{
@@ -435,10 +666,10 @@ void sigintHandler(int sig_num)
 
 // Utility
 
-void printUsers() {
+void print_registered_users() {
 
     cout << "Registered users: " << endl;
-    for(user &u : users){
+    for(User &u : users){
         cout << " - " << u.username << " " << u.password << endl;
     }
 
@@ -446,13 +677,13 @@ void printUsers() {
 
 string get_logged_client_list() {
     string logged_client_list = "";
-    for(user* &u: logged_users) logged_client_list.append(" - " + u->username + "\n");
+    for(User* &u: logged_users) logged_client_list.append(" - " + u->username + "\n");
     return logged_client_list;
 }
 
-void printLoggedUsers() {
+void print_logged_users() {
     cout << "Logged users: " << endl;
-    for(user* &u : logged_users){
+    for(User* &u : logged_users){
         cout << " - " << u->username << " " << u->password << " "
              << u->address.sin_addr.s_addr << " " << u->address.sin_port
              << u->address.sin_family << " " << u->address.sin_zero << endl;
@@ -460,8 +691,8 @@ void printLoggedUsers() {
     }
 }
 
-user* getUser(string username) {
-    for(user* &u : logged_users)
+User* get_logged_user(string username) {
+    for(User* &u : logged_users)
         if(username.compare(u->username) == 0) return u;
     return nullptr;
 }

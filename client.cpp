@@ -48,6 +48,10 @@ void client_audio();
 
 void print_message(char *msg);
 
+void remove_last_spaces(char *string);
+
+bool input_available(int fd);
+
 int  udp_socket;
 struct sockaddr_in servaddr;
 
@@ -67,10 +71,6 @@ int main(int argc, char *argv[])
 
     // authentication
     while (!client_authentication());
-//    if(!client_authentication()){
-//        udp_close();
-//        return EXIT_SUCCESS;
-//    }
 
     client_status = SUCCESS;
 
@@ -79,34 +79,12 @@ int main(int argc, char *argv[])
     // Handles writing to the shell
     thread send_thread(sender);
 
-    fd_set set;
-    FD_ZERO(&set); // clear set
-    FD_SET(udp_socket, &set); // add server descriptor on set
-    // set timeout
-    timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
-
     running = true;
-    while(running){
-
-        int ret = select(MAX_CONN_QUEUE + 1, &set, NULL, NULL, &timeout);
-        if(ret < 0) {
-            if(errno == EINTR) continue;
-            perror("Error during select operation: ");
-            exit(EXIT_FAILURE);
-        }else if(ret == 0) {
-            // timeout occurred
-            timeout.tv_sec = 5;
-            FD_ZERO(&set); // clear set
-            FD_SET(udp_socket, &set); // add server descriptor on set
-            // timeout occurred
-            if(!running) cout << "[Info] Timeout occurred, closing client." << endl;
-        }else {
-            // available data
+    while (running){
+        if(input_available(udp_socket)){
+            cout << "input available." << endl;
             receiver();
         }
-
     }
 
     cout << "Closing client." << endl;
@@ -127,7 +105,6 @@ void print_message(char *msg) {
     cout << "[ " << msg << " ][ " << msg + MSG_H_CODE_SIZE << " ][ " << msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE << " ][ "
          << msg + MSG_HEADER_SIZE << " ]" << endl;
 }
-
 
 // Functionality
 
@@ -186,20 +163,26 @@ void client_chat() {
     client_status = CODE::CHAT;
 
     char msg[MSG_SIZE];
-    // clear buffer
     memset(msg, 0, MSG_SIZE);
-    // msg code
+   // strcpy(msg,to_string(CODE::CHAT).c_str());
     sprintf(msg, "%d", CODE::CHAT);
-    // msg src
+
     memcpy(msg + MSG_H_CODE_SIZE, username.c_str(), MSG_H_SRC_SIZE);
 
     cout << "Type recipient: " << endl;
     string dst;
-    cin >> dst;
+    if(input_available(0))
+        getline(cin,dst);
+    else return;
+
     memcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, dst.c_str(), MSG_H_DST_SIZE );
 
     cout << "Type message: " << endl;
-    read(0,msg + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
+    string message;
+    if(input_available(0))
+        getline(cin,message);
+    else return;
+    strcpy(msg + MSG_HEADER_SIZE, message.c_str());
 
     cout << "send: ";
     print_message(msg);
@@ -228,6 +211,7 @@ bool client_authentication() {
     }
 
     char msg[MSG_SIZE];
+    memset(msg, 0, MSG_SIZE);
     sprintf(msg, "%d", CODE::AUTHENTICATION);
     sprintf(msg + MSG_HEADER_SIZE, "%s", credential);
 
@@ -271,6 +255,7 @@ bool client_authentication() {
 
 void receiver() {
 
+    cout << "Receiver." << endl;
     int ret;
 
     char msg[MSG_SIZE];
@@ -318,7 +303,9 @@ void sender(){
         print_info_message();
 
         string line;
-        getline(cin,line);
+        if(input_available(0))
+            getline(cin,line);
+        else break;
 
         if(line.compare("chat") == 0 ) client_chat();
         else if(line.compare("users") == 0 ) client_users();
@@ -328,6 +315,33 @@ void sender(){
 
 
     }
+}
+
+bool input_available(int fd) {
+    fd_set set;
+    FD_ZERO(&set); // clear set
+    FD_SET(fd, &set); // add server descriptor on set
+    // set timeout
+    timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+
+    while (running){
+        int ret = select( fd + 1, &set, NULL, NULL, &timeout);
+        if(ret < 0) {
+            if(errno == EINTR) continue;
+            perror("Error during select operation: ");
+            exit(EXIT_FAILURE); // error
+        }else if(ret == 0) {
+            // timeout occurred
+            timeout.tv_sec = 1;
+            FD_ZERO(&set); // clear set
+            FD_SET(fd, &set);
+            // timeout occurred
+            if(!running) break;
+        }else return true; // input available
+    }
+    return false;
 }
 
 void client_audio() {
