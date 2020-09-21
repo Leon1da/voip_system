@@ -33,7 +33,7 @@
  *
 */
 
-#define LOG 1
+#define LOG 0
 
 using namespace std;
 

@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <cstring>
-#include <netdb.h>
 #include <thread>
 #include <list>
 #include <csignal>
@@ -48,12 +47,9 @@ void client_audio();
 
 void print_message(char *msg);
 
-void remove_last_spaces(char *string);
-
 bool input_available(int fd);
 
 int  udp_socket;
-struct sockaddr_in servaddr;
 
 string username;
 list<string> logged_users;
@@ -82,7 +78,6 @@ int main(int argc, char *argv[])
     running = true;
     while (running){
         if(input_available(udp_socket)){
-            cout << "input available." << endl;
             receiver();
         }
     }
@@ -113,18 +108,19 @@ void client_video() {
 }
 
 void client_quit() {
+
     client_status = CODE::QUIT;
     running = false;
 
     char msg[MSG_SIZE];
-
     memset(msg, 0, MSG_SIZE);
-    snprintf(msg, MSG_H_CODE_SIZE, "%d", CODE::QUIT);
-    memcpy(msg + MSG_H_CODE_SIZE, username.c_str(), MSG_H_SRC_SIZE);
+    strcpy(msg, to_string(CODE::QUIT).c_str());
+    strcpy(msg + MSG_H_CODE_SIZE, username.c_str());
 
-    cout << "send: ";
-    print_message(msg);
-
+    if(LOG){
+        cout << "send: ";
+        print_message(msg);
+    }
     int ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
     if(ret < 0){
         perror("Error during send operation");
@@ -136,15 +132,14 @@ void client_users() {
     client_status = CODE::USERS;
 
     char msg[MSG_SIZE];
-    // clear buffer
     memset(msg, 0, MSG_SIZE);
-    // msg code
-    sprintf(msg, "%d", CODE::USERS);
-    // msg src
-    memcpy(msg + MSG_H_CODE_SIZE, username.c_str(), MSG_H_SRC_SIZE);
+    strcpy(msg, to_string(CODE::USERS).c_str());
+    strcpy(msg + MSG_H_CODE_SIZE, username.c_str());
 
-    cout << "send: ";
-    print_message(msg);
+    if(LOG){
+        cout << "send: ";
+        print_message(msg);
+    }
 
     int ret;
     ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
@@ -162,30 +157,32 @@ void client_chat() {
 
     client_status = CODE::CHAT;
 
-    char msg[MSG_SIZE];
-    memset(msg, 0, MSG_SIZE);
-   // strcpy(msg,to_string(CODE::CHAT).c_str());
-    sprintf(msg, "%d", CODE::CHAT);
-
-    memcpy(msg + MSG_H_CODE_SIZE, username.c_str(), MSG_H_SRC_SIZE);
-
     cout << "Type recipient: " << endl;
     string dst;
     if(input_available(0))
         getline(cin,dst);
     else return;
 
-    memcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, dst.c_str(), MSG_H_DST_SIZE );
 
     cout << "Type message: " << endl;
     string message;
     if(input_available(0))
         getline(cin,message);
     else return;
-    strcpy(msg + MSG_HEADER_SIZE, message.c_str());
 
-    cout << "send: ";
-    print_message(msg);
+
+    char msg[MSG_SIZE];
+    memset(msg, 0, MSG_SIZE);
+    strcpy(msg,to_string(CODE::CHAT).c_str()); // code
+    strcpy(msg + MSG_H_CODE_SIZE, username.c_str()); // src
+    strcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, dst.c_str()); // dst
+    strcpy(msg + MSG_HEADER_SIZE, message.c_str()); // content
+
+
+    if(LOG){
+        cout << "send: ";
+        print_message(msg);
+    }
 
     int ret;
     ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
@@ -215,10 +212,13 @@ bool client_authentication() {
     sprintf(msg, "%d", CODE::AUTHENTICATION);
     sprintf(msg + MSG_HEADER_SIZE, "%s", credential);
 
-    print_message(msg);
+    if(LOG){
+        cout << "send: ";
+        print_message(msg);
+    }
 
     int ret;
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+    ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr *) NULL, 0);
     if(ret < 0) {
         perror("Error during send operation");
         exit(EXIT_FAILURE);
@@ -234,11 +234,12 @@ bool client_authentication() {
         exit(EXIT_FAILURE);
     }
 
-
-    print_message(msg);
+    if(LOG){
+        cout << "recv: ";
+        print_message(msg);
+    }
 
     cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
-
 
     char code[MSG_H_CODE_SIZE];
     memcpy(code, msg, MSG_H_CODE_SIZE);
@@ -255,7 +256,6 @@ bool client_authentication() {
 
 void receiver() {
 
-    cout << "Receiver." << endl;
     int ret;
 
     char msg[MSG_SIZE];
@@ -265,9 +265,10 @@ void receiver() {
         exit(EXIT_FAILURE);
     }
 
-    cout << "recv: ";
-    print_message(msg);
-
+    if(LOG){
+        cout << "recv: ";
+        print_message(msg);
+    }
     char code[MSG_H_CODE_SIZE];
     memcpy(code, msg, MSG_H_CODE_SIZE);
 
@@ -281,15 +282,18 @@ void receiver() {
             cout << "[" << msg + MSG_H_CODE_SIZE << "] " << msg + MSG_HEADER_SIZE << endl;
             break;
         case QUIT:
+            cout << "[Server] Service interrupted." << endl;
             running = false;
             break;
         case USERS:
-            // [TODO] update logged_users when arrive message (USERS)
             cout << "Logged users:" << endl << msg + MSG_HEADER_SIZE << endl;
             break;
-
         case ERROR:
             cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
+            break;
+        case INFO:
+            cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
+            break;
         default:
             break;
     }
@@ -382,17 +386,19 @@ void udp_close() {
 
 void udp_init() {
 
+    struct sockaddr_in server_address;
+
     // clear servaddr
-    bzero(&servaddr, sizeof(servaddr));
-    servaddr.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
-    servaddr.sin_port = htons(SERVER_CHAT_PORT);
-    servaddr.sin_family = AF_INET;
+    bzero(&server_address, sizeof(server_address));
+    server_address.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
+    server_address.sin_port = htons(SERVER_CHAT_PORT);
+    server_address.sin_family = AF_INET;
 
     // create datagram socket
     udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
     // connect to server
-    if(connect(udp_socket, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+    if(connect(udp_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0)
     {
         printf("\n Error : Connect Failed \n");
         exit(0);
