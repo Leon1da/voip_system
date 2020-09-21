@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     running = true;
     while(running){
 
-        ret = select(MAX_CONN_QUEUE + 1, &set, NULL, NULL, &timeout);
+        ret = select(MAX_CONN_QUEUE + 1, &set, nullptr, nullptr, &timeout);
         if(ret < 0){
             if(errno == EINTR) continue;
             perror("Error during server select operation: ");
@@ -125,8 +125,8 @@ void recv_client_authentication(sockaddr_in client_addr, char *message) {
     memcpy(content, message + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
 
     string content_ = content;
-    string username = content_.substr(0,content_.find(" "));
-    string password = content_.substr(content_.find(" ") + 1, content_.size());
+    string username = content_.substr(0,content_.find(' '));
+    string password = content_.substr(content_.find(' ') + 1, content_.size());
 
     if(LOG) cout << username << " - " << password << " request login." << endl;
 
