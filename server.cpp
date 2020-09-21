@@ -1,79 +1,19 @@
 //
 // Created by leonardo on 13/05/20.
 //
-#include <algorithm>
-#include <fstream>
 
-#include <iostream>
-#include <string>
-#include <stdio.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/time.h>
 
-#include <list>
-
-#include <csignal>
-
-#include "config.h"
+#include "server.h"
 
 using namespace std;
 
 int udp_socket;
 
-list<Chat*> chats;
 
-list<User> users;
-
+list<User> registered_users;
 list<User*> logged_users;
 
 bool running;
-
-
-void sigintHandler(int sig_num);
-
-void udp_init();
-
-void udp_close();
-
-void server_init();
-
-void signal_handler_init();
-
-
-void receiver();
-
-void recv_client_chat(sockaddr_in client_addr, char* message);
-
-User * get_logged_user(string username);
-
-void recv_client_authentication(sockaddr_in client_addr, char *message);
-
-void recv_client_quit(char *msg);
-
-void print_logged_users();
-
-void print_registered_users();
-
-void recv_client_users(sockaddr_in client_addr, char *message);
-
-string get_logged_client_list();
-
-
-void print_message(char *message);
-
-void send_broadcast_message(char* message);
-
-bool isLogged(string username);
-
-bool isRegistered(string username, string password);
-
-list<User> read_users_from_file(const string filename);
-
-void print_session_chats();
 
 int main(int argc, char *argv[])
 {
@@ -116,23 +56,12 @@ int main(int argc, char *argv[])
 
     }
 
-    cout << "Print report." << endl;
-    print_session_chats();
-
     udp_close();
     cout << "Server shutdown." << endl;
 
+    for(User* u: logged_users) delete u;
+
     return EXIT_SUCCESS;
-}
-
-void print_session_chats() {
-    for(Chat* c: chats){
-        cout << "Users: ";
-        for(User u: c->users) cout << u.username << endl;
-        cout << "Messages: ";
-        for(Message m: c->messages) cout << m.text << endl;
-    }
-
 }
 
 // Functionality
@@ -168,6 +97,7 @@ void recv_client_quit(char *message) {
     if(LOG) print_logged_users();
 
     logged_users.remove(dest);
+    delete dest;
 
     if(LOG) print_logged_users();
 
@@ -203,11 +133,13 @@ void recv_client_authentication(sockaddr_in client_addr, char *message) {
     socklen_t len = sizeof(client_addr);
 
     char msg[MSG_SIZE];
+    memset(msg, 0, MSG_SIZE);
 
     if(isRegistered(username, password)){
         if(!isLogged(username)){
 
             // Alert all client join chat
+//            memset(msg, 0, MSG_SIZE);
             strcpy(msg, to_string(CODE::INFO).c_str());
             string join = "User " + username + " join chat.";
             strcpy(msg + MSG_HEADER_SIZE, join.c_str());
@@ -226,7 +158,7 @@ void recv_client_authentication(sockaddr_in client_addr, char *message) {
         } else{
             // logged
             sprintf(msg, "%d", CODE::ERROR);
-            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
+//            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
             sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed. You are already logged in.");
 
         }
@@ -290,7 +222,7 @@ void recv_client_chat(sockaddr_in client_addr, char* message){
 }
 
 bool isRegistered(string username, string password) {
-    for (User &u : users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) return true;
+    for (User &u : registered_users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) return true;
     return false;
 }
 
@@ -351,7 +283,7 @@ void receiver() {
 void server_init() {
 
     if(LOG) cout << "Read Users from database." << endl;
-    users = read_users_from_file("users.txt");
+    registered_users = read_users_from_file("users.txt");
 
     if(LOG) cout << "Signal handler init." << endl;
     signal_handler_init();
@@ -465,7 +397,7 @@ void sigintHandler(int sig_num)
 void print_registered_users() {
 
     cout << "Registered users: " << endl;
-    for(User &u : users){
+    for(User &u : registered_users){
         cout << " - " << u.username << " " << u.password << endl;
     }
 

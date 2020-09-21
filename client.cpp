@@ -2,57 +2,16 @@
 // Created by leonardo on 13/05/20.
 //
 
-#include <iostream>
-#include <string>
-#include <cstdio>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <cstdlib>
-#include <unistd.h>
-#include <cstring>
-#include <thread>
-#include <list>
-#include <csignal>
-#include <regex>
+#include "client.h"
 
 #include "config.h"
 
 using namespace std;
 
-void udp_init();
-
-void udp_close();
-
-bool client_authentication();
-
-void receiver();
-
-void client_chat();
-
-void client_users();
-
-void client_quit();
-
-void client_video();
-
-void signal_handler_init();
-
-void sender();
-
-
-void print_info_message();
-
-void client_audio();
-
-void print_message(char *msg);
-
-bool input_available(int fd);
 
 int  udp_socket;
 
 string username;
-list<string> logged_users;
 
 CODE client_status;
 bool running;
@@ -316,6 +275,7 @@ void sender(){
         else if(line.compare("quit") == 0 ) client_quit();
         else if(line.compare("video") == 0 ) client_video();
         else if(line.compare("audio") == 0 ) client_audio();
+        else cout << "Unknown command." << endl;
 
 
     }
