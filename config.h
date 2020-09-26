@@ -10,6 +10,7 @@
 #define SERVER_ADDRESS "127.0.0.1"
 #define SERVER_AUTH_PORT 5000
 #define SERVER_CHAT_PORT 6000
+#define P2P_AUDIO_PORT 4000
 
 #define MAX_CONN_QUEUE 5
 
@@ -33,7 +34,7 @@
  *
 */
 
-#define LOG 0
+#define LOG 1
 
 using namespace std;
 
@@ -47,7 +48,12 @@ enum CODE{
     USERS = 1007,
     QUIT = 1008,
     VIDEO = 1009,
-    BROADCAST = 1010
+    BROADCAST = 1010,
+    AUDIO = 1011,
+    ACCEPT = 1012,
+    REFUSE = 1013,
+    BUSY = 1014,
+    RINGOFF = 1015
 };
 
 class User{
@@ -138,4 +144,57 @@ public:
 
         return in;
     }
+};
+
+class Peer{
+private:
+    string peer_name;
+    int peer_socket;
+    sockaddr_in peer_address;
+
+    bool socket_init;
+    bool address_init;
+
+public:
+    Peer(){
+        socket_init = false;
+        address_init = false;
+    }
+
+
+    bool is_socket_init() const {
+        return socket_init;
+    }
+
+    bool is_address_init() const {
+        return address_init;
+    }
+
+    const sockaddr_in &get_peer_address() const {
+        return peer_address;
+    }
+
+    const string &get_peer_name() const {
+        return peer_name;
+    }
+
+    void set_peer_name(const string &peerName) {
+        peer_name = peerName;
+    }
+
+    int get_peer_socket() const {
+        return peer_socket;
+    }
+
+    void set_peer_socket(int peerSocket) {
+        peer_socket = peerSocket;
+        socket_init = true;
+    }
+
+    void set_peer_address(const sockaddr_in &peerAddress) {
+        peer_address = peerAddress;
+        address_init = true;
+    }
+
+
 };

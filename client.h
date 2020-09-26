@@ -21,6 +21,9 @@
 #include <csignal>
 #include <regex>
 
+#include <semaphore.h>
+
+
 
 void udp_init();
 
@@ -44,7 +47,7 @@ void client_quit();
 
 void client_video();
 
-void client_audio();
+void client_audio_request();
 
 
 // Utility

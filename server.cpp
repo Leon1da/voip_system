@@ -3,6 +3,7 @@
 //
 
 
+#include <thread>
 #include "server.h"
 
 using namespace std;
@@ -14,6 +15,18 @@ list<User> registered_users;
 list<User*> logged_users;
 
 bool running;
+
+
+
+void recv_client_request_audio(sockaddr_in client_addr, char* message);
+
+void recv_client_refuse_audio(char *msg);
+
+void recv_client_busy_audio(char *msg);
+
+void recv_client_accept_audio(char *msg);
+
+void recv_client_ringoff_audio(char *msg);
 
 int main(int argc, char *argv[])
 {
@@ -236,6 +249,7 @@ void print_message(char *msg) {
          << msg + MSG_HEADER_SIZE << " ]" << endl;
 }
 
+// [todo] check if client audio refused call
 void receiver() {
 
     int ret;
@@ -271,9 +285,119 @@ void receiver() {
             if(LOG) cout << "Quit message arrived." << endl;
             recv_client_quit(msg);
             break;
+        case AUDIO:
+            // client x vuole chiamare client y
+            if(LOG) cout << "Audio message arrived." << endl;
+            recv_client_request_audio(client_address, msg);
+            break;
+        case ACCEPT:
+            // client y ha accettato la chiamata del client x
+            if(LOG) cout << "Accept message arrived." << endl;
+            recv_client_accept_audio(msg);
+            break;
+        case REFUSE:
+            // client y ha rifiutato la chiamata del client y
+            if(LOG) cout << "Refuse message arrived." << endl;
+            recv_client_refuse_audio(msg);
+            break;
+        case RINGOFF:
+            // il client
+            if(LOG) cout << "Ringoff message arrived." << endl;
+            recv_client_ringoff_audio(msg);
+            break;
+
         default:
             if(LOG) cout << "Default message arrived." << endl;
             break;
+    }
+
+}
+
+void recv_client_ringoff_audio(char *msg) {
+    User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
+    if(dst != nullptr){
+        int ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
+        if(ret < 0){
+            perror("Error during send operation: ");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void recv_client_accept_audio(char *msg) {
+    User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
+    if(dst != nullptr){
+        int ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
+        if(ret < 0){
+            perror("Error during send operation: ");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void recv_client_refuse_audio(char *msg) {
+    // destinatario
+
+    User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
+    if(dst != nullptr){
+        int ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
+        if(ret < 0){
+            perror("Error during send operation: ");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+}
+
+/*
+ * send from src to dst the request for call
+ */
+
+void recv_client_request_audio(sockaddr_in client_addr, char* message) {
+
+    int ret;
+
+    char src_buf[MSG_H_DST_SIZE];
+    memcpy(src_buf, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
+
+    User* src = get_logged_user(src_buf);
+
+    char dst_buf[MSG_H_DST_SIZE];
+    memcpy(dst_buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
+
+    User* dst = get_logged_user(dst_buf);
+
+    socklen_t addr_len;
+    struct sockaddr_in addr;
+
+    if(dst == nullptr){
+
+        if(LOG) cout << "dst: " << dst_buf << " not found." << endl;
+
+        sprintf(message,"%d", CODE::ERROR); // set CODE
+        memcpy(message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message + MSG_H_CODE_SIZE, MSG_H_DST_SIZE); // set DST
+        memcpy(message + MSG_HEADER_SIZE, "User not found.", MSG_CONTENT_SIZE);
+
+        addr = client_addr;
+        addr_len = sizeof(addr);
+
+    }else{
+        // client loggato
+        // giro la richiesta di chiamata al destinatario (client loggato)
+
+        cout << src->username << " is calling " << dst->username << endl;
+
+        addr = dst ->address;
+        addr_len = sizeof(dst->address);
+
+    }
+
+    if(LOG) print_message(message);
+
+    ret = sendto(udp_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
+    if(ret < 0){
+        perror("Error during send operation: ");
+        exit(EXIT_FAILURE);
     }
 
 }
