@@ -3,41 +3,44 @@
 //
 
 
-#include <thread>
 #include "server.h"
 
 using namespace std;
-
-int client_server_socket;
 
 
 list<User> registered_users;
 list<User*> logged_users;
 
+MessageManager* manager;
+
 bool running;
-
-
-
-void recv_client_request_audio(sockaddr_in client_addr, char* message);
-
-void recv_client_refuse_audio(char *msg);
-
-void recv_client_accept_audio(char *msg);
-
-void recv_client_ringoff_audio(char *msg);
 
 int main(int argc, char *argv[])
 {
     cout << "Server setup." << endl;
-    server_init();
-    cout << "Protocol setup." << endl;
-    udp_init();
+    init_server();
+
+    struct sockaddr_in server_address;
+    bzero(&server_address, sizeof(server_address));
+    server_address.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_address.sin_port = htons(SERVER_CHAT_PORT);
+    server_address.sin_family = AF_INET;
+
+    int server_socket = init_server_udp_connection(server_address);
+    if(server_socket < 0){
+        perror("Error during init_server_udp_connection");
+        exit(EXIT_FAILURE);
+    }
+
+    manager = new MessageManager(server_socket);
+
     cout << "Server ready." << endl;
     print_registered_users();
 
+
     fd_set set;
     FD_ZERO(&set); // clear set
-    FD_SET(client_server_socket, &set); // add server descriptor on set
+    FD_SET(server_socket, &set); // add server descriptor on set
     // set timeout
     timeval timeout;
     timeout.tv_sec = 5;
@@ -58,7 +61,7 @@ int main(int argc, char *argv[])
              // timeout occurred
             timeout.tv_sec = 5;
             FD_ZERO(&set); // clear set
-            FD_SET(client_server_socket, &set); // add server descriptor on set
+            FD_SET(server_socket, &set); // add server descriptor on set
             if(!running) cout << "[Info] Timeout occurred, closing server." << endl;
         }else {
             // Available data
@@ -77,158 +80,181 @@ int main(int argc, char *argv[])
 
 // Functionality
 
-void recv_client_users(sockaddr_in client_addr, char *message) {
+void recv_client_users(Message *msg) {
 
-    // [TODO] andrebbe splittata la stringa se la sua lunghezza e` maggiore di MSG_CONTENT_SIZE
-    string logged_client_list = get_logged_client_list();
-    strcpy(message + MSG_HEADER_SIZE, logged_client_list.c_str());
-
-    if(LOG){
-        cout << "send: ";
-        print_message(message);
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "Fatal error: src not found." << endl;
+        exit(EXIT_FAILURE);
     }
 
-    int len = sizeof(client_addr);
-    int ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
+    string logged_client_list = get_logged_client_list();
+
+    msg->setCode(USERS);
+    msg->setSrc("Server");
+    msg->setDst(src->username);
+    msg->setContent(logged_client_list);
+
+    cout << "send: " << *msg;
+
+    int ret = manager->sendMessage(msg, &src->address);
     if(ret < 0){
-        perror("Error during send operation: ");
+        perror("Error during send users list operation");
         exit(EXIT_FAILURE);
     }
 
 }
 
-void recv_client_quit(char *message) {
+void recv_client_quit(Message *msg) {
 
-    char src[MSG_H_SRC_SIZE];
-    memcpy(src, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
-
-    User* dest = get_logged_user(src);
-    if(dest == nullptr)
-
-    if(LOG) print_logged_users();
-
-    logged_users.remove(dest);
-    delete dest;
-
-    if(LOG) print_logged_users();
-
-
-    char msg[MSG_SIZE];
-    memset(msg, 0, MSG_SIZE);
-    strcpy(msg, to_string(CODE::INFO).c_str());
-    string text = string("User ") + src + string(" left the chat.");
-    strcpy(msg + MSG_HEADER_SIZE, text.c_str());
-
-    if(LOG){
-        cout << "send: ";
-        print_message(msg);
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "Fatal error: src not found." << endl;
+        exit(EXIT_FAILURE);
     }
 
-    send_broadcast_message(msg);
+    Message out(INFO, "Server", "", "User " + src->username + " left the chat.");
+
+    logged_users.remove(src);
+    delete src;
+
+    if(LOG) print_logged_users();
+
+    send_broadcast_message(&out);
+
 
 }
 
-void recv_client_authentication(sockaddr_in client_addr, char *message) {
+void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
 
-    int ret;
+    Message out;
 
-    char content[MSG_CONTENT_SIZE];
-    memcpy(content, message + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
-
-    string content_ = content;
-    string username = content_.substr(0,content_.find(' '));
-    string password = content_.substr(content_.find(' ') + 1, content_.size());
-
+    string content = msg->getContent();
+    string username = content.substr(0,content.find(' '));
+    string password = content.substr(content.find(' ') + 1, content.size());
     if(LOG) cout << username << " - " << password << " request login." << endl;
-
-    socklen_t len = sizeof(client_addr);
-
-    char msg[MSG_SIZE];
-    memset(msg, 0, MSG_SIZE);
 
     if(isRegistered(username, password)){
         if(!isLogged(username)){
 
-            // Alert all client join chat
-//            memset(msg, 0, MSG_SIZE);
-            strcpy(msg, to_string(CODE::INFO).c_str());
-            string join = "User " + username + " join chat.";
-            strcpy(msg + MSG_HEADER_SIZE, join.c_str());
-            send_broadcast_message(msg);
+            Message broadcast_out(INFO, "", "", "User " + username + " join chat.");
+            send_broadcast_message(&broadcast_out);
 
-            // login success for client
-            memset(msg, 0, MSG_SIZE);
-            sprintf(msg, "%d", CODE::SUCCESS);
-            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
-            sprintf(msg + MSG_HEADER_SIZE, "%s", "Login successful.");
+            out.setCode(SUCCESS);
+            out.setSrc("Server");
+            out.setDst(username);
+            out.setContent("Login successful");
 
-            User* newUser = new User(0, username, password, client_addr);
+            User* newUser = new User(0, username, password, *client_addr);
             logged_users.push_back(newUser);
 
-
         } else{
-            // logged
-            sprintf(msg, "%d", CODE::ERROR);
-//            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
-            sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed. You are already logged in.");
+            // already logged
+            out.setCode(ERROR);
+            out.setSrc("Server");
+            out.setDst(username);
+            out.setContent("Login failed. You are already logged in.");
 
         }
     } else{
         // not registered
-        sprintf(msg, "%d", CODE::ERROR);
-        sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed.");
+        out.setCode(ERROR);
+        out.setSrc("Server");
+        out.setDst(username);
+        out.setContent("Login failed. Wrong username or password.");
     }
 
-    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
+    int ret = manager->sendMessage(&out, client_addr);
     if(ret < 0){
-        perror("Error during send operation: ");
+        perror("Error during send message operation");
         exit(EXIT_FAILURE);
     }
+
+
+//    int ret;
+//    char content[MSG_CONTENT_SIZE];
+//    memcpy(content, message + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
+//
+//    string content_ = content;
+//    string username = content_.substr(0,content_.find(' '));
+//    string password = content_.substr(content_.find(' ') + 1, content_.size());
+
+//    if(LOG) cout << username << " - " << password << " request login." << endl;
+//
+//    socklen_t len = sizeof(client_addr);
+//
+//    char msg[MSG_SIZE];
+//    memset(msg, 0, MSG_SIZE);
+
+//    if(isRegistered(username, password)){
+//        if(!isLogged(username)){
+//
+//            // Alert all client join chat
+////            memset(msg, 0, MSG_SIZE);
+//            strcpy(msg, to_string(CODE::INFO).c_str());
+//            string join = "User " + username + " join chat.";
+//            strcpy(msg + MSG_HEADER_SIZE, join.c_str());
+//            send_broadcast_message(msg);
+//
+//            // login success for client
+//            memset(msg, 0, MSG_SIZE);
+//            sprintf(msg, "%d", CODE::SUCCESS);
+//            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
+//            sprintf(msg + MSG_HEADER_SIZE, "%s", "Login successful.");
+//
+//            User* newUser = new User(0, username, password, client_addr);
+//            logged_users.push_back(newUser);
+//
+//
+//        } else{
+//            // logged
+//            sprintf(msg, "%d", CODE::ERROR);
+////            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
+//            sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed. You are already logged in.");
+//
+//        }
+//    } else{
+//        // not registered
+//        sprintf(msg, "%d", CODE::ERROR);
+//        sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed.");
+//    }
+//
+//    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
+//    if(ret < 0){
+//        perror("Error during send operation: ");
+//        exit(EXIT_FAILURE);
+//    }
 
 }
 
-void recv_client_chat(sockaddr_in client_addr, char* message){
+void recv_client_chat(Message *msg){
 
-    int ret;
+    struct sockaddr_in* dst_addr;
 
-    char src_buf[MSG_H_DST_SIZE];
-    memcpy(src_buf, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
+    User *src = get_logged_user(msg->getSrc());
+    if(src == nullptr) cout << "Sender not logged in. FATAL ERROR" << endl;
 
-    User* src = get_logged_user(src_buf);
-
-    char dst_buf[MSG_H_DST_SIZE];
-    memcpy(dst_buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
-
-    User* dst = get_logged_user(dst_buf);
-
-    socklen_t addr_len;
-    struct sockaddr_in addr;
-
+    User *dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
+        cout << "User " << msg->getDst() << " is not logged in or does not exist." << endl;
 
-        if(LOG) cout << "dst: " << dst_buf << " not found." << endl;
+        msg->setCode(ERROR);
+        msg->setContent("User " + msg->getDst() + " not found.");
+        msg->setDst(msg->getSrc());
+        msg->setSrc("Server");
 
-        sprintf(message,"%d", CODE::ERROR); // set CODE
-        memcpy(message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message + MSG_H_CODE_SIZE, MSG_H_DST_SIZE); // set DST
-        memcpy(message + MSG_HEADER_SIZE, "User not found.", MSG_CONTENT_SIZE);
+        dst_addr = &src->address;
 
-        addr = client_addr;
-        addr_len = sizeof(addr);
-
-    }else{
-        cout << src->username << " send message to " << dst->username << endl;
-        if(LOG) cout << "dst information: " << dst->username << " - " << dst->password << " - " << dst->address.sin_addr.s_addr << " - " << dst->address.sin_port << endl;
-
-        addr = dst ->address;
-        addr_len = sizeof(dst->address);
+    }else {
+        cout << "User " << msg->getSrc() << " sent a message to user " << msg->getDst() << "." << endl;
+        dst_addr = &dst->address;
     }
 
-    ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
+    int ret = manager->sendMessage(msg, dst_addr);
     if(ret < 0){
-        perror("Error during send operation: ");
+        perror("Error during recv_client_chat");
         exit(EXIT_FAILURE);
     }
-
 
 }
 
@@ -242,66 +268,51 @@ bool isLogged(string username) {
     return false;
 }
 
-void print_message(char *msg) {
-    cout << "[ " << msg << " ][ " << msg + MSG_H_CODE_SIZE << " ][ " << msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE << " ][ "
-         << msg + MSG_HEADER_SIZE << " ]" << endl;
-}
-
-// [todo] check if client audio refused call
 void receiver() {
 
-    int ret;
-    struct sockaddr_in client_address;
-    socklen_t len = sizeof(client_address);
 
-    char msg[MSG_SIZE];
-    ret = recvfrom(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*)&client_address, &len);
-    if(ret < 0) {
-        perror("Error during send operation");
-        exit(EXIT_FAILURE);
-    }
-
-    char code[MSG_H_CODE_SIZE];
-    memcpy(code, msg, MSG_H_CODE_SIZE);
+    struct sockaddr_in client_address{};
+    Message in;
+    manager->recvMessage(&in, &client_address);
+    cout << "recv: " << in << endl;
 
 
-    CODE code_ = (CODE) atoi(code);
-    switch (code_) {
+    switch (in.getCode()) {
         case AUTHENTICATION:
             if(LOG) cout << "Authentication message arrived." << endl;
-            recv_client_authentication(client_address, msg);
+            recv_client_authentication(&client_address, &in);
             break;
         case CHAT:
             if(LOG) cout << "Chat message arrived." << endl;
-            recv_client_chat(client_address, msg);
+            recv_client_chat(&in);
             break;
         case USERS:
             if(LOG) cout << "Users message arrived." << endl;
-            recv_client_users(client_address, msg);
+            recv_client_users(&in);
             break;
         case QUIT:
             if(LOG) cout << "Quit message arrived." << endl;
-            recv_client_quit(msg);
+            recv_client_quit(&in);
             break;
         case AUDIO:
             // client x vuole chiamare client y
             if(LOG) cout << "Audio message arrived." << endl;
-            recv_client_request_audio(client_address, msg);
+            recv_client_request_audio(&in);
             break;
         case ACCEPT:
             // client y ha accettato la chiamata del client x
             if(LOG) cout << "Accept message arrived." << endl;
-            recv_client_accept_audio(msg);
+            recv_client_accept_audio(&in);
             break;
         case REFUSE:
             // client y ha rifiutato la chiamata del client y
             if(LOG) cout << "Refuse message arrived." << endl;
-            recv_client_refuse_audio(msg);
+            recv_client_refuse_audio(&in);
             break;
         case RINGOFF:
             // il client
             if(LOG) cout << "Ringoff message arrived." << endl;
-            recv_client_ringoff_audio(msg);
+            recv_client_ringoff_audio(&in);
             break;
 
         default:
@@ -309,40 +320,131 @@ void receiver() {
             break;
     }
 
+
+
+//    int ret;
+//    struct sockaddr_in client_address;
+//    socklen_t len = sizeof(client_address);
+//
+//    char msg[MSG_SIZE];
+//    ret = recvfrom(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*)&client_address, &len);
+//    if(ret < 0) {
+//        perror("Error during send operation");
+//        exit(EXIT_FAILURE);
+//    }
+//
+//    char code[MSG_H_CODE_SIZE];
+//    memcpy(code, msg, MSG_H_CODE_SIZE);
+
+
+//
+//    CODE code_ = (CODE) atoi(code);
+//    switch (code_) {
+//        case AUTHENTICATION:
+//            if(LOG) cout << "Authentication message arrived." << endl;
+//            recv_client_authentication(client_address, msg);
+//            break;
+//        case CHAT:
+//            if(LOG) cout << "Chat message arrived." << endl;
+//            recv_client_chat(client_address, msg);
+//            break;
+//        case USERS:
+//            if(LOG) cout << "Users message arrived." << endl;
+//            recv_client_users(client_address, msg);
+//            break;
+//        case QUIT:
+//            if(LOG) cout << "Quit message arrived." << endl;
+//            recv_client_quit(msg);
+//            break;
+//        case AUDIO:
+//            // client x vuole chiamare client y
+//            if(LOG) cout << "Audio message arrived." << endl;
+//            recv_client_request_audio(client_address, msg);
+//            break;
+//        case ACCEPT:
+//            // client y ha accettato la chiamata del client x
+//            if(LOG) cout << "Accept message arrived." << endl;
+//            recv_client_accept_audio(msg);
+//            break;
+//        case REFUSE:
+//            // client y ha rifiutato la chiamata del client y
+//            if(LOG) cout << "Refuse message arrived." << endl;
+//            recv_client_refuse_audio(msg);
+//            break;
+//        case RINGOFF:
+//            // il client
+//            if(LOG) cout << "Ringoff message arrived." << endl;
+//            recv_client_ringoff_audio(msg);
+//            break;
+//
+//        default:
+//            if(LOG) cout << "Default message arrived." << endl;
+//            break;
+//    }
+
 }
 
-void recv_client_ringoff_audio(char *msg) {
-    User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
-    if(dst != nullptr){
-        int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
-        if(ret < 0){
-            perror("Error during send operation: ");
-            exit(EXIT_FAILURE);
-        }
+void recv_client_accept_audio(Message *msg) {
+
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "Fatal error: src not found." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    User* dst = get_logged_user(msg->getDst());
+    if(dst == nullptr){
+        cout << "Fatal error: dst not found." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    int ret = manager->sendMessage(msg, &dst->address);
+    if(ret < 0){
+        perror("Error during recv_client_accept_audio");
+        exit(EXIT_FAILURE);
     }
 }
 
-void recv_client_accept_audio(char *msg) {
-    User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
-    if(dst != nullptr){
-        int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
-        if(ret < 0){
-            perror("Error during send operation: ");
-            exit(EXIT_FAILURE);
-        }
+void recv_client_refuse_audio(Message *msg) {
+
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "Fatal error: src not found." << endl;
+        exit(EXIT_FAILURE);
     }
+
+    User* dst = get_logged_user(msg->getDst());
+    if(dst == nullptr){
+        cout << "Fatal error: dst not found." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    int ret = manager->sendMessage(msg, &dst->address);
+    if(ret < 0){
+        perror("Error during recv_client_refuse_audio");
+        exit(EXIT_FAILURE);
+    }
+
 }
 
-void recv_client_refuse_audio(char *msg) {
-    // destinatario
+void recv_client_ringoff_audio(Message *msg) {
 
-    User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
-    if(dst != nullptr){
-        int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
-        if(ret < 0){
-            perror("Error during send operation: ");
-            exit(EXIT_FAILURE);
-        }
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "Fatal error: src not found." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    User* dst = get_logged_user(msg->getDst());
+    if(dst == nullptr){
+        cout << "Fatal error: dst not found." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    int ret = manager->sendMessage(msg, &dst->address);
+    if(ret < 0){
+        perror("Error during recv_client_ringoff_audio");
+        exit(EXIT_FAILURE);
     }
 
 }
@@ -350,59 +452,89 @@ void recv_client_refuse_audio(char *msg) {
 /*
  * send from src to dst the request for call
  */
+void recv_client_request_audio(Message *msg) {
 
-void recv_client_request_audio(sockaddr_in client_addr, char* message) {
+    struct sockaddr_in* dst_addr;
 
-    int ret;
-
-    char src_buf[MSG_H_DST_SIZE];
-    memcpy(src_buf, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
-
-    User* src = get_logged_user(src_buf);
-
-    char dst_buf[MSG_H_DST_SIZE];
-    memcpy(dst_buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
-
-    User* dst = get_logged_user(dst_buf);
-
-    socklen_t addr_len;
-    struct sockaddr_in addr;
-
-    if(dst == nullptr){
-
-        if(LOG) cout << "dst: " << dst_buf << " not found." << endl;
-
-        sprintf(message,"%d", CODE::ERROR); // set CODE
-        memcpy(message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message + MSG_H_CODE_SIZE, MSG_H_DST_SIZE); // set DST
-        memcpy(message + MSG_HEADER_SIZE, "User not found.", MSG_CONTENT_SIZE);
-
-        addr = client_addr;
-        addr_len = sizeof(addr);
-
-    }else{
-        // client loggato
-        // giro la richiesta di chiamata al destinatario (client loggato)
-
-        cout << src->username << " is calling " << dst->username << endl;
-
-        addr = dst ->address;
-        addr_len = sizeof(dst->address);
-
-    }
-
-    if(LOG) print_message(message);
-
-    ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
-    if(ret < 0){
-        perror("Error during send operation: ");
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "Fatal error: src not found." << endl;
         exit(EXIT_FAILURE);
     }
+
+    User *dst = get_logged_user(msg->getDst());
+    if(dst == nullptr){
+        cout << "User " << msg->getDst() << " is not logged in or does not exist." << endl;
+
+        msg->setCode(ERROR);
+        msg->setContent("User " + msg->getDst() + " not found.");
+        msg->setDst(msg->getSrc());
+        msg->setSrc("Server");
+
+        dst_addr = &src->address;
+
+    }else {
+        cout << "User " << msg->getSrc() << " is calling user " << msg->getDst() << "." << endl;
+        dst_addr = &dst->address;
+    }
+
+    int ret = manager->sendMessage(msg, dst_addr);
+    if(ret < 0){
+        perror("Error during recv_client_request_audio");
+        exit(EXIT_FAILURE);
+    }
+
+
+//    int ret;
+//
+//    char src_buf[MSG_H_DST_SIZE];
+//    memcpy(src_buf, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
+//
+//    User* src = get_logged_user(src_buf);
+//
+//    char dst_buf[MSG_H_DST_SIZE];
+//    memcpy(dst_buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
+//
+//    User* dst = get_logged_user(dst_buf);
+//
+//    socklen_t addr_len;
+//    struct sockaddr_in addr;
+//
+//    if(dst == nullptr){
+//
+//        if(LOG) cout << "dst: " << dst_buf << " not found." << endl;
+//
+//        sprintf(message,"%d", CODE::ERROR); // set CODE
+//        memcpy(message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message + MSG_H_CODE_SIZE, MSG_H_DST_SIZE); // set DST
+//        memcpy(message + MSG_HEADER_SIZE, "User not found.", MSG_CONTENT_SIZE);
+//
+//        addr = client_addr;
+//        addr_len = sizeof(addr);
+//
+//    }else{
+//        // client loggato
+//        // giro la richiesta di chiamata al destinatario (client loggato)
+//
+//        cout << src->username << " is calling " << dst->username << endl;
+//
+//        addr = dst ->address;
+//        addr_len = sizeof(dst->address);
+//
+//    }
+//
+//    if(LOG) print_message(message);
+//
+//    ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
+//    if(ret < 0){
+//        perror("Error during send operation: ");
+//        exit(EXIT_FAILURE);
+//    }
 
 }
 
 // Initialization
 
-void server_init() {
+void init_server() {
 
     if(LOG) cout << "Read Users from database." << endl;
     registered_users = read_users_from_file("users.txt");
@@ -432,42 +564,35 @@ list<User> read_users_from_file(const string filename) {
 
 }
 
+int init_server_udp_connection(sockaddr_in socket_address) {
 
-void udp_init() {
+    cout << "UDP protocol setupping..." << endl;
 
-    cout << "Udp protocol setupping..." << endl;
+    int ret, socket_udp;
+    cout << " - socket.." << endl;
+    socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
+    if(socket_udp < 0) return socket_udp;
+    cout << " - socket succeeded." << endl;
 
-    struct sockaddr_in server_address;
-    bzero(&server_address, sizeof(server_address));
-    server_address.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_address.sin_port = htons(SERVER_CHAT_PORT);
-    server_address.sin_family = AF_INET;
-
-    // Create a UDP Socket
-    client_server_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if(client_server_socket < 0){
-        perror("Error during socket operation.");
-        exit(EXIT_FAILURE);
-    }
-
-    // bind server address to socket descriptor
-    int ret = bind(client_server_socket, (struct sockaddr *) &server_address, sizeof(server_address));
-    if(ret < 0){
-        perror("Error during bind operation.");
-        exit(EXIT_FAILURE);
-    }
+    cout << " - bind.." << endl;
+    ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
+    if(ret < 0) return ret;
+    cout << " - bind succeeded." << endl;
 
     cout << "Udp protocol configured." << endl;
 
+    return socket_udp;
 }
 
 void close_udp_connection(int socket) {
-    cout << "Udp socket closing..." << endl;
-    if(close(client_server_socket) < 0){ // this cause an error on accept
-        perror("Error during close server socket");
+
+    // close the descriptor
+    int ret = close(socket);
+    if(ret < 0){
+        perror("Error during close operation");
         exit(EXIT_FAILURE);
     }
-    cout << "Udp socket closed." << endl;
+
 }
 
 void signal_handler_init() {
@@ -481,28 +606,18 @@ void signal_handler_init() {
 
 }
 
-void send_broadcast_message(char* message){
-    int ret;
-    for(User* u: logged_users){
-        int len = sizeof(u->address);
-        ret = sendto(client_server_socket, message, MSG_SIZE, 0, (sockaddr*) &u->address, len);
-        if(ret < 0){
-            perror("Error during send operation");
-            exit(EXIT_FAILURE);
-        }
-    }
+void send_broadcast_message(Message *msg){
+    for(User* u: logged_users) manager->sendMessage(msg, &u->address);
 }
 
 /* Signal Handler for SIGINT */
 void sigintHandler(int sig_num)
 {
-    char msg[MSG_SIZE];
-    memset(msg, 0, MSG_SIZE);
-    strcpy(msg, to_string(CODE::QUIT).c_str());
-    send_broadcast_message(msg);
+    Message out(QUIT, "", "", "");
+    send_broadcast_message(&out);
 
     running = false;
-
+    delete manager;
 }
 
 

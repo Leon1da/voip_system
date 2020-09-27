@@ -14,18 +14,6 @@
 
 #define MAX_CONN_QUEUE 5
 
-// MSG
-
-#define MSG_H_CODE_SIZE 8
-#define MSG_H_DST_SIZE 24
-#define MSG_H_SRC_SIZE 24
-
-#define MSG_HEADER_SIZE MSG_H_CODE_SIZE + MSG_H_DST_SIZE + MSG_H_SRC_SIZE
-
-#define MSG_CONTENT_SIZE 512
-
-#define MSG_SIZE MSG_HEADER_SIZE + MSG_CONTENT_SIZE
-
 /*
  *
  * [              MSG              ]
@@ -33,31 +21,31 @@
  * [ CODE ][ SRC ][ DST ][ CONTENT ]
  *
 */
+#include <cstring>
+#include <string>
+#include <iostream>
+#include <string>
+#include <cstdio>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <cstdlib>
+#include <unistd.h>
+#include <cstring>
+#include <thread>
+#include <list>
+#include <csignal>
+#include <regex>
 
 #define LOG 1
 
 using namespace std;
 
-enum CODE{
-    ERROR = 1001,
-    INFO = 1003 ,
-    SUCCESS = 1004,
-    AUTHENTICATION = 1005,
-    CHAT = 1006,
-    USERS = 1007,
-    QUIT = 1008,
-    VIDEO = 1009,
-    AUDIO = 1011,
-    ACCEPT = 1012,
-    REFUSE = 1013,
-    RINGOFF = 1015
-};
-
 class User{
 
 public:
 
-    User(){};
+    User()= default;;
 
     User(int id, string username, string password, sockaddr_in address) {
         this->id = id;
@@ -72,10 +60,10 @@ public:
         this->password = password;
     }
 
-    int id;
+    int id{};
     string username;
     string password;
-    sockaddr_in address;
+    sockaddr_in address{};
 
     bool operator==(const User &rhs) const {
         return id == rhs.id;
@@ -107,41 +95,6 @@ public:
 
 };
 
-class Message{
-public:
-    User src;
-    User dst;
-    string text;
-
-    Message(){}
-
-    Message(User src, User dst, string text){
-        this->src = src;
-        this->dst = dst;
-        this->text = text;
-    }
-
-/*
-    * Write the member variables to stream objects
-    */
-    friend std::ostream & operator << (std::ostream &out, const Message & obj)
-    {
-        out << obj.src << " " << obj.dst << " " << obj.text;
-        return out;
-    }
-
-    /*
-    * Read data from stream object and fill it in member variables
-    */
-    friend std::istream & operator >> (std::istream &in, Message &obj)
-    {
-        in >> obj.src;
-        in >> obj.dst;
-        in >> obj.text;
-
-        return in;
-    }
-};
 
 class Peer{
 private:
@@ -151,11 +104,13 @@ private:
 
     bool socket_init;
     bool address_init;
+    bool name_init;
 
 public:
     Peer(){
         socket_init = false;
         address_init = false;
+        name_init = false;
     }
 
 
@@ -165,6 +120,10 @@ public:
 
     bool is_address_init() const {
         return address_init;
+    }
+
+    bool is_name_init() const {
+        return name_init;
     }
 
     const sockaddr_in &get_peer_address() const {
@@ -177,6 +136,7 @@ public:
 
     void set_peer_name(const string &peerName) {
         peer_name = peerName;
+        name_init = true;
     }
 
     int get_peer_socket() const {

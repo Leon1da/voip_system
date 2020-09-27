@@ -23,7 +23,13 @@
 
 #include <semaphore.h>
 
+#include "config.h"
+#include "MessageManager.h"
 
+
+int init_server_udp_connection(sockaddr_in socket_address);
+
+int init_client_udp_connection(sockaddr_in socket_address);
 
 void udp_init();
 
@@ -37,7 +43,7 @@ void sender();
 
 void receiver();
 
-bool client_authentication();
+int client_authentication();
 
 void client_chat();
 
@@ -72,9 +78,9 @@ void client_audio_refuse();
 
 void client_audio_ringoff();
 
-void recv_audio_accept(char *msg);
+void recv_audio_accept(Message *msg);
 
-void recv_audio_request(char* msg);
+void recv_audio_request(Message *msg);
 
 void recv_audio_ringoff();
 

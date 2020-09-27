@@ -14,19 +14,29 @@
 #include <ctime>
 #include <list>
 #include <csignal>
+#include <thread>
+
 #include "config.h"
+#include "MessageManager.h"
 
 #ifndef CHAT_UDP_SERVER_H
 #define CHAT_UDP_SERVER_H
 
 #endif //CHAT_UDP_SERVER_H
 
+void recv_client_request_audio(Message *msg);
 
-void udp_init();
+void recv_client_refuse_audio(Message *msg);
+
+void recv_client_accept_audio(Message *msg);
+
+void recv_client_ringoff_audio(Message *msg);
+
+int init_server_udp_connection(sockaddr_in socket_address);
 
 void close_udp_connection(int socket);
 
-void server_init();
+void init_server();
 
 void signal_handler_init();
 
@@ -37,15 +47,15 @@ void sigintHandler(int sig_num);
 
 void receiver();
 
-void recv_client_chat(sockaddr_in client_addr, char* message);
+void recv_client_chat(Message *msg);
 
-void recv_client_authentication(sockaddr_in client_addr, char *message);
+void recv_client_authentication(sockaddr_in *client_addr, Message *msg);
 
-void recv_client_quit(char *message);
+void recv_client_quit(Message *msg);
 
-void recv_client_users(sockaddr_in client_addr, char *message);
+void recv_client_users(Message *msg);
 
-void send_broadcast_message(char* message);
+void send_broadcast_message(Message *msg);
 
 
 // Utility
