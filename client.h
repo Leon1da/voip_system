@@ -27,7 +27,7 @@
 
 void udp_init();
 
-void udp_close();
+void close_udp_connection(int socket);
 
 void signal_handler_init();
 
@@ -57,3 +57,27 @@ void print_info_message();
 void print_message(char *msg);
 
 bool input_available(int fd);
+
+void unblocked_recvfrom(int socket, char *buf, int buf_size);
+
+// audio
+
+void called_routine();
+
+void caller_routine();
+
+void client_audio_accept();
+
+void client_audio_refuse();
+
+void client_audio_ringoff();
+
+void recv_audio_accept(char *msg);
+
+void recv_audio_request(char* msg);
+
+void recv_audio_ringoff();
+
+void recv_audio_refuse();
+
+void safe_peer_delete();

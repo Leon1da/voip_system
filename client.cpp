@@ -9,45 +9,41 @@
 using namespace std;
 
 
-int  udp_socket;
+int  client_server_socket; // for client/server connection
 
 string username;
 
 CODE client_status;
 bool running;
 
-sem_t mutex;
 int calling;
 Peer* connected_peer;
 
-void called_routine();
-void caller_routine();
 
-void client_audio_accept();
+int init_server_udp_connection(sockaddr_in socket_address);
 
-void recv_audio_request(char* msg);
-
-void client_audio_refuse();
-
-void client_audio_ringoff();
-
-void recv_audio_accept(char *msg);
-
-void safe_peer_delete();
-
-void recv_audio_ringoff();
-
-void unblocked_recvfrom(int socket, char *buf, int buf_size);
-
-void recv_audio_refuse();
+int init_client_udp_connection(sockaddr_in socket_address);
 
 int main(int argc, char *argv[])
 {
     cout << "Signal handler setup." << endl;
     signal_handler_init();
+    cout << "Signal handler ok." << endl;
 
-    cout << "Client setup." << endl;
-    udp_init();
+    cout << "Client/Server connection setupping." << endl;
+
+    struct sockaddr_in server_address{};
+    bzero(&server_address, sizeof(server_address));
+    server_address.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
+    server_address.sin_port = htons(SERVER_CHAT_PORT);
+    server_address.sin_family = AF_INET;
+
+    client_server_socket = init_client_udp_connection(server_address);
+    if(client_server_socket < 0){
+        perror("Error during udp connection init.");
+        exit(EXIT_FAILURE);
+    }
+    cout << "Client/server connection ok." << endl;
 
     // authentication
     while (!client_authentication());
@@ -55,28 +51,26 @@ int main(int argc, char *argv[])
     client_status = SUCCESS;
 
     cout << "Welcome " << username << endl;
+    print_info_message();
 
     // Handles writing to the shell
     thread send_thread(sender);
 
-    int ret = sem_init(&mutex, 0, 1);
-    if(ret < 0){
-        perror("Error during sem_init operation");
-        exit(EXIT_FAILURE);
-    }
-
     calling = false;
     running = true;
     while (running){
-        if(input_available(udp_socket)){
+        if(input_available(client_server_socket)){
             receiver();
         }
     }
 
     cout << "Closing client." << endl;
+
     send_thread.join();
 
-    udp_close();
+    cout << "Closing client/server connection." << endl;
+    close_udp_connection(client_server_socket);
+    cout << "client/server connection closed." << endl;
 
     return EXIT_SUCCESS;
 }
@@ -84,7 +78,7 @@ int main(int argc, char *argv[])
 void print_info_message() {
     cout << "Type <users> to see users online. " << endl
             << "Type <chat> to send message. " << endl
-            << "Type <audio> to call " << endl
+            << "Type <audio> to call. " << endl
             << "Type <quit> to disconnect." << endl;
 }
 
@@ -114,7 +108,7 @@ void client_quit() {
         cout << "send: ";
         print_message(msg);
     }
-    int ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
+    int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, nullptr, 0);
     if(ret < 0){
         perror("Error during send operation");
         exit(EXIT_FAILURE);
@@ -135,7 +129,7 @@ void client_users() {
     }
 
     int ret;
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
+    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, nullptr, 0);
     if(ret < 0){
         perror("Error during send operation.");
         exit(EXIT_FAILURE);
@@ -178,7 +172,7 @@ void client_chat() {
     }
 
     int ret;
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
+    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, nullptr, 0);
     if(ret < 0){
         perror("Error during send operation.");
         exit(EXIT_FAILURE);
@@ -189,12 +183,11 @@ void client_chat() {
 bool client_authentication() {
     client_status = CODE::AUTHENTICATION;
 
-    regex r("[a-zA-Z0-9]+ [a-zA-Z0-9]+");
-
     cout << "Digit <username> <password> for access to service." << endl;
     char credential[MSG_CONTENT_SIZE];
     cin.getline(credential, MSG_CONTENT_SIZE);
 
+    regex r("[a-zA-Z0-9]+ [a-zA-Z0-9]+");
     if(!regex_match(credential, r)){
         cout << "No pattern mathing (<username> <password>)." << endl;
         return false;
@@ -211,17 +204,15 @@ bool client_authentication() {
     }
 
     int ret;
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr *) NULL, 0);
+    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr *) nullptr, 0);
     if(ret < 0) {
         perror("Error during send operation");
         exit(EXIT_FAILURE);
     }
 
-    // clear buffer
-    memset(msg, 0, MSG_SIZE);
-    // waiting for response
 
-    ret = recvfrom(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr *) NULL, 0);
+    memset(msg, 0, MSG_SIZE);
+    ret = recvfrom(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr *) nullptr, nullptr);
     if(ret < 0){
         perror("Error during recv operation");
         exit(EXIT_FAILURE);
@@ -234,16 +225,11 @@ bool client_authentication() {
 
     cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
 
-    char code[MSG_H_CODE_SIZE];
-    memcpy(code, msg, MSG_H_CODE_SIZE);
-
-    CODE code_ = (CODE) atoi(code);
-    if(code_ == CODE::SUCCESS){
-        char user[MSG_H_DST_SIZE];
-        memcpy(user, msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
-        username = user;
+    if(strcmp(msg, to_string(CODE::SUCCESS).c_str()) == 0){
+        username = msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE;
         return true;
-    }else return false;
+    }
+    return false;
 
 }
 
@@ -254,6 +240,8 @@ void client_audio_request() {
 
     client_status = CODE::AUDIO;
 
+    if(LOG) cout << "Client audio request." << endl;
+
     // client select dst of call
     cout << "Type recipient: " << endl;
     string dst;
@@ -261,62 +249,52 @@ void client_audio_request() {
         getline(cin,dst);
     else return;
 
-    // init peer socket
-    cout << "P2P Udp protocol setupping..." << endl;
-    struct sockaddr_in peer_address;
+    struct sockaddr_in peer_address{};
     bzero(&peer_address, sizeof(peer_address));
-    peer_address.sin_addr.s_addr = INADDR_ANY; //SERVER_ADDRESS
+    peer_address.sin_addr.s_addr = INADDR_ANY;
     peer_address.sin_port = 0;
     peer_address.sin_family = AF_INET;
 
-    int peer_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if(peer_socket < 0){
-        perror("Error during socket operation.");
+    int socket = init_server_udp_connection(peer_address);
+    if(socket < 0){
+        perror("Error during init_udp_connection");
         exit(EXIT_FAILURE);
     }
 
-    // bind server address to socket descriptor
-    int ret = bind(peer_socket, (struct sockaddr *) &peer_address, sizeof(peer_address));
+    struct sockaddr_in local_peer_addr{};
+    socklen_t len = sizeof(local_peer_addr);
+    int ret = getsockname(socket, (struct sockaddr*)&local_peer_addr, &len);
     if(ret < 0){
-        perror("Error during bind operation.");
+        perror("Error during getsockname operation.");
         exit(EXIT_FAILURE);
     }
-    cout << "P2P Udp protocol configured." << endl;
 
-    // preparo ip e porta da mandare al client destinatario
-    struct sockaddr_in peer_addr;
-    socklen_t len = sizeof(peer_addr);
-    getsockname(peer_socket, (struct sockaddr*)&peer_addr, &len);
-
-    string addr = to_string(htonl(peer_addr.sin_addr.s_addr)).append(" ").append(to_string(ntohs(peer_addr.sin_port)));
-    cout << "peer_addr.sin_addr: " << inet_ntoa(peer_addr.sin_addr) << endl;
-    cout << "peer_addr.sin_addr.s_addr: " << to_string(htonl(peer_addr.sin_addr.s_addr)) << endl;
-    cout << "peer_addr.sin_port: " << to_string(ntohs(peer_addr.sin_port)) << endl;
+    string local_peer_addr_string = to_string(htonl(local_peer_addr.sin_addr.s_addr)).append(" ").append(to_string(ntohs(local_peer_addr.sin_port)));
 
     char msg[MSG_SIZE];
     memset(msg, 0, MSG_SIZE);
     strcpy(msg,to_string(CODE::AUDIO).c_str()); // code
     strcpy(msg + MSG_H_CODE_SIZE, username.c_str()); // src
     strcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, dst.c_str()); // dst
-    strcpy(msg + MSG_HEADER_SIZE, addr.c_str());
+    strcpy(msg + MSG_HEADER_SIZE, local_peer_addr_string.c_str());
 
     if(LOG){
         cout << "send: ";
         print_message(msg);
     }
 
-    // invio al server i dati da girare al peer destinatario
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
+    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, nullptr, 0);
     if(ret < 0){
         perror("Error during send operation.");
         exit(EXIT_FAILURE);
     }
-    cout << "Inviata richiesta al Server." << endl;
 
     calling = true;
     connected_peer = new Peer();
     connected_peer->set_peer_name(dst);
-    connected_peer->set_peer_socket(peer_socket);
+    connected_peer->set_peer_socket(socket);
+
+    if(LOG) cout << "Client audio request sent." << endl;
 
 }
 
@@ -324,45 +302,34 @@ void client_audio_request() {
  * Accept audio request from peer
  */
 void client_audio_accept() {
-    int ret;
 
-    // creo la socket per gestire la comunicazione
-    struct sockaddr_in peer_address;
-    bzero(&peer_address, sizeof(peer_address));
-    peer_address.sin_addr.s_addr = connected_peer->get_peer_address().sin_addr.s_addr; // inet_addr(SERVER_ADDRESS);
-    peer_address.sin_port = connected_peer->get_peer_address().sin_port; // htons(SERVER_CHAT_PORT);
-    peer_address.sin_family = AF_INET;
+    client_status = ACCEPT;
 
-    // create datagram socket
-    int peer_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
+    remote_peer_addr.sin_family = AF_INET;
+
+    int peer_socket = init_client_udp_connection(remote_peer_addr);
     if(peer_socket < 0){
-        perror("Error during socket operation.");
+        perror("Error during init_client_udp_connection operation.");
         exit(EXIT_FAILURE);
     }
 
-    cout << "Connecting." << endl;
-    // connect to server
-    ret = connect(peer_socket, (struct sockaddr *)&peer_address, sizeof(peer_address));
-    if(ret < 0) {
-        perror("Error during connect operation");
-        exit(EXIT_FAILURE);
-    }
-    cout << "Connected." << endl;
 
-
-    // invio al server ip e address da inoltrare al client che ha richiesto la chiamata
-    struct sockaddr_in peer_addr;
+    // get sock info for client
+    struct sockaddr_in peer_addr{};
     socklen_t len = sizeof(peer_addr);
-    ret = getsockname(peer_socket, (struct sockaddr*)&peer_addr, &len);
+    int ret = getsockname(peer_socket, (struct sockaddr*)&peer_addr, &len);
     if(ret < 0){
         perror("Error during getsockname operation");
         exit(EXIT_FAILURE);
     }
 
     string addr = to_string(htonl(peer_addr.sin_addr.s_addr)).append(" ").append(to_string(ntohs(peer_addr.sin_port)));
-    cout << "peer_addr.sin_addr: " << inet_ntoa(peer_addr.sin_addr) << endl;
-    cout << "peer_addr.sin_addr.s_addr: " << to_string(htonl(peer_addr.sin_addr.s_addr)) << endl;
-    cout << "peer_addr.sin_port: " << to_string(ntohs(peer_addr.sin_port)) << endl;
+    if(LOG){
+        cout << "peer_addr.sin_addr: " << inet_ntoa(peer_addr.sin_addr) << endl;
+        cout << "peer_addr.sin_addr.s_addr: " << to_string(htonl(peer_addr.sin_addr.s_addr)) << endl;
+        cout << "peer_addr.sin_port: " << to_string(ntohs(peer_addr.sin_port)) << endl;
+    }
 
     char msg[MSG_SIZE];
     memset(msg, 0, MSG_SIZE);
@@ -371,7 +338,7 @@ void client_audio_accept() {
     strcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, connected_peer->get_peer_name().c_str());
     strcpy(msg + MSG_HEADER_SIZE, addr.c_str());
 
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) NULL, 0);
+    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) NULL, 0);
     if(ret < 0){
         perror("Error during send operation: ");
         exit(EXIT_FAILURE);
@@ -379,9 +346,7 @@ void client_audio_accept() {
 
     connected_peer->set_peer_socket(peer_socket);
 
-    // creo un trheaad che gestisce lo scambio di dati tra i due peers
     thread called_thread(called_routine);
-//    called_thread.join();
     called_thread.detach();
 
 }
@@ -391,7 +356,7 @@ void client_audio_accept() {
  */
 void client_audio_refuse() {
 
-    // il client rifiuta la chiamata
+
     char msg[MSG_SIZE];
     memset(msg, 0, MSG_SIZE);
     strcpy(msg, to_string(CODE::REFUSE).c_str());
@@ -399,7 +364,7 @@ void client_audio_refuse() {
     strcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, connected_peer->get_peer_name().c_str());
 
     int ret;
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
+    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, nullptr, 0);
     if(ret < 0){
         perror("Error during send operation.");
         exit(EXIT_FAILURE);
@@ -427,13 +392,12 @@ void client_audio_ringoff() {
         cout << "send: ";
         print_message(msg);
     }
-    cout << "Sending Ringoff." << endl;
-    int ret = sendto(udp_socket, msg, MSG_SIZE, 0, NULL, 0);
+
+    int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, NULL, 0);
     if(ret < 0){
         perror("Error during send operation");
         exit(EXIT_FAILURE);
     }
-    cout << "Sent Ringoff." << endl;
 
     safe_peer_delete();
 
@@ -441,7 +405,6 @@ void client_audio_ringoff() {
 
 void called_routine(){
     cout << "Called routine start." << endl;
-
     int ret, counter = 0;
 
     int socket = connected_peer->get_peer_socket();
@@ -590,19 +553,20 @@ void recv_audio_accept(char *msg) {
     caller_thread.detach();
 }
 
+void recv_audio_ringoff() {
+    safe_peer_delete();
+}
+
+void recv_audio_refuse() {
+    safe_peer_delete();
+}
+
 void safe_peer_delete() {
 
-    int ret;
-
     calling = false;
-    if(connected_peer != nullptr) {
-        if(connected_peer->is_socket_init()){
-            ret = close(connected_peer->get_peer_socket());
-            if(ret < 0){
-                perror("Error during close operation");
-                exit(EXIT_FAILURE);
-            }
-        }
+    if(connected_peer != nullptr){
+        if(connected_peer->is_socket_init())
+            close_udp_connection(connected_peer->get_peer_socket());
 
         delete connected_peer;
         connected_peer = nullptr;
@@ -611,14 +575,9 @@ void safe_peer_delete() {
 
 }
 
-void recv_audio_ringoff() {
-    safe_peer_delete();
-}
-
 
 void sender(){
     while (running){
-        print_info_message();
 
         string line;
         if(input_available(0))
@@ -636,26 +595,28 @@ void sender(){
             else if(line.compare("quit") == 0 ) client_quit();
             else if(line.compare("video") == 0 ) client_video();
             else if(line.compare("audio") == 0 ) client_audio_request(); // client vuole chiamare un client
-            else cout << "Unknown command." << endl;
+            else{
+                cout << "Unknown command." << endl;
+                print_info_message();
+            }
+
         }else{
-            if(line.compare("accept") == 0 ) client_audio_accept(); // client accetta chiamata di un client
-            else if(line.compare("refuse") == 0 ) client_audio_refuse(); // client rifiuta chiamata di un client
-            else if(line.compare("ringoff") == 0 ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
-            else cout << "Unknown command." << endl;
+            if(client_status == AUDIO){
+                if(connected_peer->is_address_init()){
+                    if(line.compare("accept") == 0 ) client_audio_accept(); // client accetta chiamata di un client
+                    else if(line.compare("refuse") == 0 ) client_audio_refuse(); // client rifiuta chiamata di un client
+                    else cout << "Incaming call.. <accept> or <refuse> ?" << endl;
+                } else{
+                    if(line.compare("refuse") == 0 ) client_audio_refuse(); // client rifiuta chiamata di un client
+                    else cout << "Outgoing call.. <refuse> ?" << endl;
+                }
+            } else if(client_status == ACCEPT){
+                if(line.compare("ringoff") == 0 ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
+                else cout << "Calling in progress.. <ringoff> ?" << endl;
+            } else cout << "Unknown status." << endl;
 
         }
 
-//
-//
-//        if(line.compare("chat") == 0 ) client_chat();
-//        else if(line.compare("users") == 0 ) client_users();
-//        else if(line.compare("quit") == 0 ) client_quit();
-//        else if(line.compare("video") == 0 ) client_video();
-//        else if(line.compare("audio") == 0 ) client_audio_request(); // client vuole chiamare un client
-//        else if(line.compare("accept") == 0 ) client_audio_accept(); // client accetta chiamata di un client
-//        else if(line.compare("refuse") == 0 ) client_audio_refuse(); // client rifiuta chiamata di un client
-//        else if(line.compare("ringoff") == 0 ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
-//        else cout << "Unknown command." << endl;
     }
 }
 
@@ -664,7 +625,7 @@ void receiver() {
     int ret;
 
     char msg[MSG_SIZE];
-    ret = recvfrom(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr *) NULL, 0);
+    ret = recvfrom(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr *) NULL, 0);
     if(ret < 0){
         perror("Error during recv operation");
         exit(EXIT_FAILURE);
@@ -680,9 +641,6 @@ void receiver() {
 
     CODE code_ = (CODE) atoi(code);
     switch (code_) {
-        case BROADCAST:
-            cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
-            break;
         case CHAT:
             cout << "[" << msg + MSG_H_CODE_SIZE << "] " << msg + MSG_HEADER_SIZE << endl;
             break;
@@ -695,6 +653,8 @@ void receiver() {
             break;
         case ERROR:
             cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
+            client_status = ERROR;
+            safe_peer_delete();
             break;
         case INFO:
             cout << "[Server] " << msg + MSG_HEADER_SIZE << endl;
@@ -702,20 +662,24 @@ void receiver() {
         case AUDIO:
             // il server mi comunica che un client mi sta chiamando
             cout << "Receive audio request." << endl;
+            client_status = AUDIO;
             recv_audio_request(msg);
             break;
         case ACCEPT:
             // il server mi comunica che il client ha accettato la chiamata
             cout << "Receive audio accept." << endl;
+            client_status = ACCEPT;
             recv_audio_accept(msg);
             break;
         case REFUSE:
             // il server mi comunica che il client ha rifiutato la chiamata
             cout << "Receive audio refuse." << endl;
+            client_status = REFUSE;
             recv_audio_refuse();
             break;
         case RINGOFF:
             cout << "Receive audio ringoff." << endl;
+            client_status = RINGOFF;
             recv_audio_ringoff();
             break;
         default:
@@ -726,22 +690,17 @@ void receiver() {
 
 }
 
-void recv_audio_refuse() {
-    safe_peer_delete();
-}
-
-
 bool input_available(int fd) {
     fd_set set;
     FD_ZERO(&set); // clear set
     FD_SET(fd, &set); // add server descriptor on set
     // set timeout
-    timeval timeout;
+    timeval timeout{};
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
 
     while (running){
-        int ret = select( fd + 1, &set, NULL, NULL, &timeout);
+        int ret = select( fd + 1, &set, nullptr, nullptr, &timeout);
         if(ret < 0) {
             if(errno == EINTR) continue;
             perror("Error during select operation: ");
@@ -758,6 +717,51 @@ bool input_available(int fd) {
     return false;
 }
 
+
+
+// Initialization
+
+int init_server_udp_connection(sockaddr_in socket_address) {
+
+    cout << "UDP protocol setupping..." << endl;
+
+    int ret, socket_udp;
+    cout << " - socket." << endl;
+    socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
+    if(socket_udp < 0) return socket_udp;
+    cout << " - socket succeeded." << endl;
+
+    cout << " - bind." << endl;
+    ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
+    if(ret < 0) return ret;
+    cout << " - bind succeeded." << endl;
+
+    cout << "Udp protocol configured." << endl;
+
+    return socket_udp;
+}
+
+int init_client_udp_connection(sockaddr_in socket_address) {
+
+    int socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
+    if(socket_udp < 0) return  socket_udp;
+
+    int ret = connect(socket_udp, (struct sockaddr *)&socket_address, sizeof(socket_address));
+    if(ret < 0) return ret;
+
+    return socket_udp;
+}
+
+void close_udp_connection(int socket) {
+
+    // close the descriptor
+    int ret = close(socket);
+    if(ret < 0){
+        perror("Error during close operation");
+        exit(EXIT_FAILURE);
+    }
+
+}
 
 /* Signal Handler for SIGINT */
 void sigintHandler(int sig_num)
@@ -776,42 +780,6 @@ void sigintHandler(int sig_num)
 
 }
 
-
-// Initialization
-
-void udp_close() {
-
-    // close the descriptor
-    int ret = close(udp_socket);
-    if(ret < 0){
-        perror("Error during close operation");
-        exit(EXIT_FAILURE);
-    }
-
-}
-
-void udp_init() {
-
-    struct sockaddr_in server_address;
-
-    // clear servaddr
-    bzero(&server_address, sizeof(server_address));
-    server_address.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
-    server_address.sin_port = htons(SERVER_CHAT_PORT);
-    server_address.sin_family = AF_INET;
-
-    // create datagram socket
-    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-
-    // connect to server
-    if(connect(udp_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0)
-    {
-        printf("\n Error : Connect Failed \n");
-        exit(0);
-    }
-
-}
-
 void signal_handler_init() {
     /* signal handler */
     struct sigaction sigIntHandler;
@@ -822,3 +790,4 @@ void signal_handler_init() {
     /* end signal handler */
 
 }
+

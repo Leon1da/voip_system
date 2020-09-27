@@ -24,7 +24,7 @@
 
 void udp_init();
 
-void udp_close();
+void close_udp_connection(int socket);
 
 void server_init();
 

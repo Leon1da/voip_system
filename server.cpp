@@ -8,7 +8,7 @@
 
 using namespace std;
 
-int udp_socket;
+int client_server_socket;
 
 
 list<User> registered_users;
@@ -21,8 +21,6 @@ bool running;
 void recv_client_request_audio(sockaddr_in client_addr, char* message);
 
 void recv_client_refuse_audio(char *msg);
-
-void recv_client_busy_audio(char *msg);
 
 void recv_client_accept_audio(char *msg);
 
@@ -39,7 +37,7 @@ int main(int argc, char *argv[])
 
     fd_set set;
     FD_ZERO(&set); // clear set
-    FD_SET(udp_socket, &set); // add server descriptor on set
+    FD_SET(client_server_socket, &set); // add server descriptor on set
     // set timeout
     timeval timeout;
     timeout.tv_sec = 5;
@@ -60,7 +58,7 @@ int main(int argc, char *argv[])
              // timeout occurred
             timeout.tv_sec = 5;
             FD_ZERO(&set); // clear set
-            FD_SET(udp_socket, &set); // add server descriptor on set
+            FD_SET(client_server_socket, &set); // add server descriptor on set
             if(!running) cout << "[Info] Timeout occurred, closing server." << endl;
         }else {
             // Available data
@@ -69,7 +67,7 @@ int main(int argc, char *argv[])
 
     }
 
-    udp_close();
+    close_udp_connection(0);
     cout << "Server shutdown." << endl;
 
     for(User* u: logged_users) delete u;
@@ -91,7 +89,7 @@ void recv_client_users(sockaddr_in client_addr, char *message) {
     }
 
     int len = sizeof(client_addr);
-    int ret = sendto(udp_socket, message, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
+    int ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
     if(ret < 0){
         perror("Error during send operation: ");
         exit(EXIT_FAILURE);
@@ -181,7 +179,7 @@ void recv_client_authentication(sockaddr_in client_addr, char *message) {
         sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed.");
     }
 
-    ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
+    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
     if(ret < 0){
         perror("Error during send operation: ");
         exit(EXIT_FAILURE);
@@ -225,7 +223,7 @@ void recv_client_chat(sockaddr_in client_addr, char* message){
         addr_len = sizeof(dst->address);
     }
 
-    ret = sendto(udp_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
+    ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
     if(ret < 0){
         perror("Error during send operation: ");
         exit(EXIT_FAILURE);
@@ -257,7 +255,7 @@ void receiver() {
     socklen_t len = sizeof(client_address);
 
     char msg[MSG_SIZE];
-    ret = recvfrom(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*)&client_address, &len);
+    ret = recvfrom(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*)&client_address, &len);
     if(ret < 0) {
         perror("Error during send operation");
         exit(EXIT_FAILURE);
@@ -316,7 +314,7 @@ void receiver() {
 void recv_client_ringoff_audio(char *msg) {
     User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
     if(dst != nullptr){
-        int ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
+        int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
         if(ret < 0){
             perror("Error during send operation: ");
             exit(EXIT_FAILURE);
@@ -327,7 +325,7 @@ void recv_client_ringoff_audio(char *msg) {
 void recv_client_accept_audio(char *msg) {
     User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
     if(dst != nullptr){
-        int ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
+        int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
         if(ret < 0){
             perror("Error during send operation: ");
             exit(EXIT_FAILURE);
@@ -340,7 +338,7 @@ void recv_client_refuse_audio(char *msg) {
 
     User* dst = get_logged_user(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE);
     if(dst != nullptr){
-        int ret = sendto(udp_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
+        int ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &dst->address, sizeof(dst->address));
         if(ret < 0){
             perror("Error during send operation: ");
             exit(EXIT_FAILURE);
@@ -394,7 +392,7 @@ void recv_client_request_audio(sockaddr_in client_addr, char* message) {
 
     if(LOG) print_message(message);
 
-    ret = sendto(udp_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
+    ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
     if(ret < 0){
         perror("Error during send operation: ");
         exit(EXIT_FAILURE);
@@ -446,14 +444,14 @@ void udp_init() {
     server_address.sin_family = AF_INET;
 
     // Create a UDP Socket
-    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if(udp_socket < 0){
+    client_server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if(client_server_socket < 0){
         perror("Error during socket operation.");
         exit(EXIT_FAILURE);
     }
 
     // bind server address to socket descriptor
-    int ret = bind(udp_socket, (struct sockaddr *) &server_address, sizeof(server_address));
+    int ret = bind(client_server_socket, (struct sockaddr *) &server_address, sizeof(server_address));
     if(ret < 0){
         perror("Error during bind operation.");
         exit(EXIT_FAILURE);
@@ -463,9 +461,9 @@ void udp_init() {
 
 }
 
-void udp_close() {
+void close_udp_connection(int socket) {
     cout << "Udp socket closing..." << endl;
-    if(close(udp_socket) < 0){ // this cause an error on accept
+    if(close(client_server_socket) < 0){ // this cause an error on accept
         perror("Error during close server socket");
         exit(EXIT_FAILURE);
     }
@@ -487,7 +485,7 @@ void send_broadcast_message(char* message){
     int ret;
     for(User* u: logged_users){
         int len = sizeof(u->address);
-        ret = sendto(udp_socket, message, MSG_SIZE, 0, (sockaddr*) &u->address, len);
+        ret = sendto(client_server_socket, message, MSG_SIZE, 0, (sockaddr*) &u->address, len);
         if(ret < 0){
             perror("Error during send operation");
             exit(EXIT_FAILURE);
@@ -504,14 +502,6 @@ void sigintHandler(int sig_num)
     send_broadcast_message(msg);
 
     running = false;
-
-//    if(!logged_users.empty()){
-//        print_logged_users();
-//        cout << "Unable to shut down server. there are connected clients." << endl;
-//    }
-//    else{
-//        running = false;
-//    }
 
 }
 

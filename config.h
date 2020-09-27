@@ -40,7 +40,6 @@ using namespace std;
 
 enum CODE{
     ERROR = 1001,
-    WARINING = 1002,
     INFO = 1003 ,
     SUCCESS = 1004,
     AUTHENTICATION = 1005,
@@ -48,11 +47,9 @@ enum CODE{
     USERS = 1007,
     QUIT = 1008,
     VIDEO = 1009,
-    BROADCAST = 1010,
     AUDIO = 1011,
     ACCEPT = 1012,
     REFUSE = 1013,
-    BUSY = 1014,
     RINGOFF = 1015
 };
 
