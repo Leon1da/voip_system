@@ -170,61 +170,6 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
         exit(EXIT_FAILURE);
     }
 
-
-//    int ret;
-//    char content[MSG_CONTENT_SIZE];
-//    memcpy(content, message + MSG_HEADER_SIZE, MSG_CONTENT_SIZE);
-//
-//    string content_ = content;
-//    string username = content_.substr(0,content_.find(' '));
-//    string password = content_.substr(content_.find(' ') + 1, content_.size());
-
-//    if(LOG) cout << username << " - " << password << " request login." << endl;
-//
-//    socklen_t len = sizeof(client_addr);
-//
-//    char msg[MSG_SIZE];
-//    memset(msg, 0, MSG_SIZE);
-
-//    if(isRegistered(username, password)){
-//        if(!isLogged(username)){
-//
-//            // Alert all client join chat
-////            memset(msg, 0, MSG_SIZE);
-//            strcpy(msg, to_string(CODE::INFO).c_str());
-//            string join = "User " + username + " join chat.";
-//            strcpy(msg + MSG_HEADER_SIZE, join.c_str());
-//            send_broadcast_message(msg);
-//
-//            // login success for client
-//            memset(msg, 0, MSG_SIZE);
-//            sprintf(msg, "%d", CODE::SUCCESS);
-//            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
-//            sprintf(msg + MSG_HEADER_SIZE, "%s", "Login successful.");
-//
-//            User* newUser = new User(0, username, password, client_addr);
-//            logged_users.push_back(newUser);
-//
-//
-//        } else{
-//            // logged
-//            sprintf(msg, "%d", CODE::ERROR);
-////            sprintf(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, "%s", username.c_str());
-//            sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed. You are already logged in.");
-//
-//        }
-//    } else{
-//        // not registered
-//        sprintf(msg, "%d", CODE::ERROR);
-//        sprintf(msg + MSG_HEADER_SIZE, "%s", "Login failed.");
-//    }
-//
-//    ret = sendto(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &client_addr, len);
-//    if(ret < 0){
-//        perror("Error during send operation: ");
-//        exit(EXIT_FAILURE);
-//    }
-
 }
 
 void recv_client_chat(Message *msg){
@@ -320,68 +265,6 @@ void receiver() {
             break;
     }
 
-
-
-//    int ret;
-//    struct sockaddr_in client_address;
-//    socklen_t len = sizeof(client_address);
-//
-//    char msg[MSG_SIZE];
-//    ret = recvfrom(client_server_socket, msg, MSG_SIZE, 0, (struct sockaddr*)&client_address, &len);
-//    if(ret < 0) {
-//        perror("Error during send operation");
-//        exit(EXIT_FAILURE);
-//    }
-//
-//    char code[MSG_H_CODE_SIZE];
-//    memcpy(code, msg, MSG_H_CODE_SIZE);
-
-
-//
-//    CODE code_ = (CODE) atoi(code);
-//    switch (code_) {
-//        case AUTHENTICATION:
-//            if(LOG) cout << "Authentication message arrived." << endl;
-//            recv_client_authentication(client_address, msg);
-//            break;
-//        case CHAT:
-//            if(LOG) cout << "Chat message arrived." << endl;
-//            recv_client_chat(client_address, msg);
-//            break;
-//        case USERS:
-//            if(LOG) cout << "Users message arrived." << endl;
-//            recv_client_users(client_address, msg);
-//            break;
-//        case QUIT:
-//            if(LOG) cout << "Quit message arrived." << endl;
-//            recv_client_quit(msg);
-//            break;
-//        case AUDIO:
-//            // client x vuole chiamare client y
-//            if(LOG) cout << "Audio message arrived." << endl;
-//            recv_client_request_audio(client_address, msg);
-//            break;
-//        case ACCEPT:
-//            // client y ha accettato la chiamata del client x
-//            if(LOG) cout << "Accept message arrived." << endl;
-//            recv_client_accept_audio(msg);
-//            break;
-//        case REFUSE:
-//            // client y ha rifiutato la chiamata del client y
-//            if(LOG) cout << "Refuse message arrived." << endl;
-//            recv_client_refuse_audio(msg);
-//            break;
-//        case RINGOFF:
-//            // il client
-//            if(LOG) cout << "Ringoff message arrived." << endl;
-//            recv_client_ringoff_audio(msg);
-//            break;
-//
-//        default:
-//            if(LOG) cout << "Default message arrived." << endl;
-//            break;
-//    }
-
 }
 
 void recv_client_accept_audio(Message *msg) {
@@ -474,8 +357,17 @@ void recv_client_request_audio(Message *msg) {
         dst_addr = &src->address;
 
     }else {
-        cout << "User " << msg->getSrc() << " is calling user " << msg->getDst() << "." << endl;
-        dst_addr = &dst->address;
+        if(src == dst){
+            msg->setCode(ERROR);
+            msg->setContent("you can't call yourself");
+            msg->setDst(msg->getSrc());
+            msg->setSrc("Server");
+
+            dst_addr = &src->address;
+        }else{
+            cout << "User " << msg->getSrc() << " is calling user " << msg->getDst() << "." << endl;
+            dst_addr = &dst->address;
+        }
     }
 
     int ret = manager->sendMessage(msg, dst_addr);
@@ -483,52 +375,6 @@ void recv_client_request_audio(Message *msg) {
         perror("Error during recv_client_request_audio");
         exit(EXIT_FAILURE);
     }
-
-
-//    int ret;
-//
-//    char src_buf[MSG_H_DST_SIZE];
-//    memcpy(src_buf, message + MSG_H_CODE_SIZE, MSG_H_SRC_SIZE);
-//
-//    User* src = get_logged_user(src_buf);
-//
-//    char dst_buf[MSG_H_DST_SIZE];
-//    memcpy(dst_buf, message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, MSG_H_DST_SIZE);
-//
-//    User* dst = get_logged_user(dst_buf);
-//
-//    socklen_t addr_len;
-//    struct sockaddr_in addr;
-//
-//    if(dst == nullptr){
-//
-//        if(LOG) cout << "dst: " << dst_buf << " not found." << endl;
-//
-//        sprintf(message,"%d", CODE::ERROR); // set CODE
-//        memcpy(message + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message + MSG_H_CODE_SIZE, MSG_H_DST_SIZE); // set DST
-//        memcpy(message + MSG_HEADER_SIZE, "User not found.", MSG_CONTENT_SIZE);
-//
-//        addr = client_addr;
-//        addr_len = sizeof(addr);
-//
-//    }else{
-//        // client loggato
-//        // giro la richiesta di chiamata al destinatario (client loggato)
-//
-//        cout << src->username << " is calling " << dst->username << endl;
-//
-//        addr = dst ->address;
-//        addr_len = sizeof(dst->address);
-//
-//    }
-//
-//    if(LOG) print_message(message);
-//
-//    ret = sendto(client_server_socket, message, MSG_SIZE, 0, (struct sockaddr*) &addr, addr_len);
-//    if(ret < 0){
-//        perror("Error during send operation: ");
-//        exit(EXIT_FAILURE);
-//    }
 
 }
 

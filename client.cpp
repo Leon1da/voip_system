@@ -20,6 +20,7 @@ int calling;
 Peer* connected_peer;
 
 
+int available(int fd, int sec, int usec);
 
 int main(int argc, char *argv[])
 {
@@ -68,7 +69,14 @@ int main(int argc, char *argv[])
     calling = false;
     running = true;
     while (running){
-        if(input_available(client_server_socket)){
+        ret = available(client_server_socket, 1, 0);
+        if(ret < 0){
+            if(errno == EINTR) continue;
+        } else if(ret == 0) {
+            // timeout occurred
+            if(!running) break;
+        } else{
+            // input available
             receiver();
         }
     }
@@ -127,16 +135,37 @@ void client_chat() {
 
     cout << "Type recipient: " << endl;
     string dst;
-    if(input_available(0))
-        getline(cin,dst);
-    else return;
-
+    while (running){
+        int ret = available(0, 1, 0);
+        if(ret < 0) {
+            if(errno == EINTR) continue;
+            //error
+        } else if(ret == 0 ) {
+            //timeout
+            if(!running) return;
+        } else{
+            getline(cin,dst);
+            break;
+        }
+    }
 
     cout << "Type message: " << endl;
     string message;
-    if(input_available(0))
-        getline(cin,message);
-    else return;
+
+    while (running){
+        int ret = available(0, 1, 0);
+        if(ret < 0) {
+            if(errno == EINTR) continue;
+
+            //error
+        } else if(ret == 0 ) {
+            //timeout
+            if(!running) return;
+        } else{
+            getline(cin,message);
+            break;
+        }
+    }
 
     Message out(CHAT, username, dst, message);
     cout << "send: " << out << endl;
@@ -191,9 +220,20 @@ void client_audio_request() {
     // client select dst of call
     cout << "Type recipient: " << endl;
     string dst;
-    if(input_available(0))
-        getline(cin,dst);
-    else return;
+
+    while (running){
+        int ret = available(0, 1, 0);
+        if(ret < 0) {
+            if(errno == EINTR) continue;
+            //error
+        } else if(ret == 0 ) {
+            //timeout
+            if(!running) return;
+        } else{
+            getline(cin,dst);
+            break;
+        }
+    }
 
     struct sockaddr_in peer_address{};
     bzero(&peer_address, sizeof(peer_address));
@@ -279,6 +319,9 @@ void client_audio_accept() {
  * Refused audio request from peer
  */
 void client_audio_refuse() {
+
+    client_status = REFUSE;
+
     if(connected_peer != nullptr && connected_peer->is_name_init()){
         Message out(REFUSE, username, connected_peer->get_peer_name(), "");
         cout << "send: " << out << endl;
@@ -294,6 +337,9 @@ void client_audio_refuse() {
  * Ringoff audio call
  */
 void client_audio_ringoff() {
+
+    client_status = RINGOFF;
+
     if(connected_peer != nullptr && connected_peer->is_name_init()) {
         Message out(RINGOFF, username, connected_peer->get_peer_name(), "");
         cout << "send: " << out << endl;
@@ -306,7 +352,7 @@ void client_audio_ringoff() {
 
 void called_routine(){
     cout << "Called routine start." << endl;
-    int ret, counter = 0;
+    int ret;
 
     int socket = connected_peer->get_peer_socket();
     sockaddr_in address = connected_peer->get_peer_address();
@@ -328,9 +374,26 @@ void called_routine(){
 
         cout << "recvfrom." << endl;
 
+        char buf[MSG_SIZE];
         if(calling){
-            memset(msg, 0, MSG_SIZE);
-            unblocked_recvfrom(socket, msg, MSG_SIZE);
+            ret = available(socket, 0, 5000);
+            if(ret < 0){
+                perror("Error during select operation");
+                exit(EXIT_FAILURE);
+            } else if(ret == 0) {
+                // timeout occurred
+                cout << "Timeout called." << endl;
+            } else{
+                // input available
+                if(calling){
+                    memset(buf, 0, MSG_SIZE);
+                    ret = recvfrom(socket, buf, MSG_SIZE, 0, nullptr, nullptr);
+                    if(ret < 0) {
+                        perror("Error during recv operation");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+            }
         }
         cout << "recvfrom ok." << endl;
 
@@ -341,7 +404,7 @@ void called_routine(){
 
 void caller_routine(){
     cout << "Caller routine start." << endl;
-    int ret, counter = 0;
+    int ret;
 
     int socket = connected_peer->get_peer_socket();
     sockaddr_in address = connected_peer->get_peer_address();
@@ -352,8 +415,26 @@ void caller_routine(){
 
         if(LOG) cout << "recvfrom." << endl;
         if(calling){
-            memset(msg, 0, MSG_SIZE);
-            unblocked_recvfrom(socket, msg, MSG_SIZE);
+
+            ret = available(socket, 0, 500);
+            if(ret < 0){
+                perror("Error during select operation");
+                exit(EXIT_FAILURE);
+            } else if(ret == 0) {
+                // timeout occurred
+                cout << "Timeout caller."<< endl;
+            } else{
+                // input available
+                if(calling){
+                    memset(msg, 0, MSG_SIZE);
+                    ret = recvfrom(socket, msg, MSG_SIZE, 0, nullptr, nullptr);
+                    if(ret < 0) {
+                        perror("Error during recv operation");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+            }
+
         }
         if(LOG) cout << "recvfrom ok." << endl;
 
@@ -373,43 +454,24 @@ void caller_routine(){
     cout << "Caller routine end." << endl;
 }
 
-void unblocked_recvfrom(int socket, char *buf, int buf_size) {
-
-    fd_set set;
-    FD_ZERO(&set); // clear set
-    FD_SET(socket, &set); // add server descriptor on set
-    // set timeout
-    timeval timeout;
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-
-    int ret;
-    ret = select( socket + 1, &set, NULL, NULL, &timeout);
-    if(ret < 0) {
-        perror("Error during select operation");
-        exit(EXIT_FAILURE); // error
-    }else if(ret == 0) {
-        // timeout occurred
-        cout << "timeout." << endl;
-
-    }else{
-        ret = recvfrom(socket, buf, buf_size, 0, NULL, NULL);
-        if(ret < 0) {
-            perror("Error during recv operation");
-            exit(EXIT_FAILURE);
-        }
-
-    }
-}
 
 /*
  * Client receive audio request
  */
 void recv_audio_request(Message *msg) {
 
+    if(calling){
+        // occupato in un altra chiamata
+        Message out(REFUSE, username, msg->getSrc(), "Client busy.");
+        cout << "send: " << out << endl;
+        manager->sendMessage(&out);
+        return;
+    }
+
+
     client_status = AUDIO;
 
-    string content = msg->getContent();
+    const string& content = msg->getContent();
     string s_addr_string = content.substr(0, content.find(' '));
     string sin_port_string = content.substr(content.find(' ') + 1, content.size());
 
@@ -434,7 +496,7 @@ void recv_audio_accept(Message *msg) {
 
     client_status = ACCEPT;
 
-    string content = msg->getContent();
+    const string& content = msg->getContent();
     string s_addr_string = content.substr(0, content.find(' '));
     string sin_port_string = content.substr(content.find(' ') + 1, content.size());
 
@@ -450,6 +512,7 @@ void recv_audio_accept(Message *msg) {
 
     thread caller_thread(caller_routine);
     caller_thread.detach();
+
 
 }
 
@@ -482,21 +545,26 @@ void sender(){
     while (running){
 
         string line;
-        if(input_available(0))
-            getline(cin,line);
-        else break;
+        int ret = available(0, 1, 0);
+        if(ret < 0) {
+            if(errno == EINTR) continue;
 
-        // if(calling && socket) refuse
-        // else if(calling && address) refuse or accept
-        // else if(calling && socket && address) ringoff
-        // else if(!calling) tutto il resto
+            //error
+        } else if(ret == 0 ) {
+            //timeout
+            if(!running) return;
+            else continue;
+        } else{
+            getline(cin,line);
+        }
+
 
         if(!calling){
-            if(line.compare("chat") == 0 ) client_chat();
-            else if(line.compare("users") == 0 ) client_users();
-            else if(line.compare("quit") == 0 ) client_quit();
-            else if(line.compare("video") == 0 ) client_video();
-            else if(line.compare("audio") == 0 ) client_audio_request(); // client vuole chiamare un client
+            if(line == "chat" ) client_chat();
+            else if(line == "users" ) client_users();
+            else if(line == "quit" ) client_quit();
+            else if(line == "video" ) client_video();
+            else if(line == "audio" ) client_audio_request(); // client vuole chiamare un client
             else{
                 cout << "Unknown command." << endl;
                 print_info_message();
@@ -505,15 +573,15 @@ void sender(){
         }else{
             if(client_status == AUDIO){
                 if(connected_peer->is_address_init()){
-                    if(line.compare("accept") == 0 ) client_audio_accept(); // client accetta chiamata di un client
-                    else if(line.compare("refuse") == 0 ) client_audio_refuse(); // client rifiuta chiamata di un client
+                    if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
+                    else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
                     else cout << "Incaming call.. <accept> or <refuse> ?" << endl;
                 } else{
-                    if(line.compare("refuse") == 0 ) client_audio_refuse(); // client rifiuta chiamata di un client
+                    if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
                     else cout << "Outgoing call.. <refuse> ?" << endl;
                 }
             } else if(client_status == ACCEPT){
-                if(line.compare("ringoff") == 0 ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
+                if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
                 else cout << "Calling in progress.. <ringoff> ?" << endl;
             } else cout << "Unknown status." << endl;
 
@@ -534,6 +602,7 @@ void receiver() {
             break;
         case QUIT:
             cout << "[Server] Service interrupted." << endl;
+            safe_peer_delete();
             running = false;
             break;
         case USERS:
@@ -573,33 +642,18 @@ void receiver() {
 
 }
 
-bool input_available(int fd) {
+int available(int fd, int sec, int usec){
     fd_set set;
     FD_ZERO(&set); // clear set
     FD_SET(fd, &set); // add server descriptor on set
     // set timeout
     timeval timeout{};
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
+    timeout.tv_sec = sec;
+    timeout.tv_usec = usec;
 
-    while (running){
-        int ret = select( fd + 1, &set, nullptr, nullptr, &timeout);
-        if(ret < 0) {
-            if(errno == EINTR) continue;
-            perror("Error during select operation: ");
-            exit(EXIT_FAILURE); // error
-        }else if(ret == 0) {
-            // timeout occurred
-            timeout.tv_sec = 1;
-            FD_ZERO(&set); // clear set
-            FD_SET(fd, &set);
-            // timeout occurred
-            if(!running) break;
-        }else return true; // input available
-    }
-    return false;
+    int ret = select( fd + 1, &set, nullptr, nullptr, &timeout);
+    return ret;
 }
-
 
 
 // Initialization
@@ -660,22 +714,23 @@ void sigintHandler(int sig_num)
     cout << endl <<"Catch Ctrl+C - System status: " << client_status << endl;
     switch (client_status) {
         case CODE::AUTHENTICATION:
-            cout << "Authentication stopped." << endl;
+            if(LOG) cout << "Authentication stopped." << endl;
             break;
         case CODE::AUDIO:
-            cout << "Audio request stopped." << endl;
+            if(LOG) cout << "Audio request stopped." << endl;
             client_audio_refuse();
             break;
         case CODE::ACCEPT:
-            cout << "Audio accept stopped." << endl;
+            if(LOG) cout << "Audio accept stopped." << endl;
             client_audio_ringoff();
-            break;
+            cout << "Call interrupted, now you can stop service." << endl;
+            return;
         case CODE::RINGOFF:
             cout << "Audio Ringoff stopped." << endl;
-            client_audio_ringoff();
+//            client_audio_ringoff();
             break;
         default:
-            cout << "Service Stopped." << endl;
+            if(LOG) cout << "Service Stopped." << endl;
             break;
     }
 
