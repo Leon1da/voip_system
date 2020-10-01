@@ -2,6 +2,10 @@
 // Created by leonardo on 13/05/20.
 //
 
+#include <stdio.h>
+#include "ipify.h"
+
+#include <netdb.h>
 #include "client.h"
 #include "AudioManager.h"
 
@@ -32,6 +36,7 @@ int recvAudio(char *buffer, int size, int socket, sockaddr_in address, int addre
 
 int main(int argc, char *argv[])
 {
+
     cout << "Signal handler setup.." << endl;
     signal_handler_init();
     cout << "Signal handler ok." << endl;
@@ -235,7 +240,6 @@ void client_audio_request() {
     // client select dst of call
     cout << "Type recipient: " << endl;
     string dst;
-
     while (running){
         int ret = available(0, 1, 0);
         if(ret < 0) {
@@ -262,17 +266,30 @@ void client_audio_request() {
         exit(EXIT_FAILURE);
     }
 
-    struct sockaddr_in local_peer_addr{};
-    socklen_t len = sizeof(local_peer_addr);
-    int ret = getsockname(socket, (struct sockaddr*)&local_peer_addr, &len);
+    struct sockaddr_in peertopeer_address{};
+    socklen_t len_peer = sizeof(peertopeer_address);
+    int ret = getsockname(socket, (struct sockaddr*)&peertopeer_address, &len_peer);
     if(ret < 0){
         perror("Error during getsockname operation.");
         exit(EXIT_FAILURE);
     }
 
-    string local_peer_addr_string = to_string(htonl(local_peer_addr.sin_addr.s_addr)).append(" ").append(to_string(ntohs(local_peer_addr.sin_port)));
+    cout << "PEER: " << inet_ntoa(peertopeer_address.sin_addr) << " - " << htonl(peertopeer_address.sin_addr.s_addr) << " - " << ntohs(peertopeer_address.sin_port) << endl;
 
-    Message out(AUDIO, username, dst, local_peer_addr_string);
+    /*
+    * retrive client public ip
+    */
+    char addr[256];
+    if (ipify(addr, sizeof(addr))) {
+        //errore (no ip address)
+        cout << "FATAL ERROR: no public ip address" << endl;
+    } else{
+        cout << "public ip address: " << addr << endl;
+    }
+
+    string addr_string = string(inet_ntoa(peertopeer_address.sin_addr)) + " " + to_string(ntohs(peertopeer_address.sin_port)); // ip publico e porta casuale
+
+    Message out(AUDIO, username, dst, addr_string);
     cout << "send: " << out << endl;
     manager->sendMessage(&out);
 
@@ -301,6 +318,13 @@ void client_audio_accept() {
         exit(EXIT_FAILURE);
     }
 
+//    char addr[256];
+//    if (ipify(addr, sizeof(addr))) {
+//        //errore (no ip address)
+//        cout << "FATAL ERROR: no public ip address" << endl;
+//    } else{
+//        cout << "public ip address: " << addr << endl;
+//    }
 
     // get sock info for client
     struct sockaddr_in peer_addr{};
@@ -311,12 +335,14 @@ void client_audio_accept() {
         exit(EXIT_FAILURE);
     }
 
-    string address_string = to_string(htonl(peer_addr.sin_addr.s_addr)).append(" ").append(to_string(ntohs(peer_addr.sin_port)));
+    string address_string = string(inet_ntoa(peer_addr.sin_addr)).append(" ").append(to_string(ntohs(peer_addr.sin_port)));
     if(LOG){
         cout << "peer_addr.sin_addr: " << inet_ntoa(peer_addr.sin_addr) << endl;
         cout << "peer_addr.sin_addr.s_addr: " << to_string(htonl(peer_addr.sin_addr.s_addr)) << endl;
         cout << "peer_addr.sin_port: " << to_string(ntohs(peer_addr.sin_port)) << endl;
     }
+
+
 
     Message out(ACCEPT, username, connected_peer->get_peer_name(), address_string);
     cout << "send: " << out << endl;
@@ -324,6 +350,19 @@ void client_audio_accept() {
 
 
     connected_peer->set_peer_socket(peer_socket);
+
+//    // il chiamato invia o riceve
+//    cout << "TRY TO RECV." << endl;
+//    sockaddr_in address;
+//    int address_len;
+//    char msg[MSG_SIZE];
+//    ret = recvfrom(peer_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+//    if(ret < 0) {
+//        perror("Error during recv operation");
+//        exit(EXIT_FAILURE);
+//    }
+//    cout << msg << endl;
+//    cout << "TRY TO RECV END." << endl;
 
     thread called_thread(called_routine);
     called_thread.detach();
@@ -365,7 +404,113 @@ void client_audio_ringoff() {
 
 }
 
+/*
+ * Client receive audio request
+ */
+void recv_audio_request(Message *msg) {
+
+    if(calling){
+        // occupato in un altra chiamata
+        Message out(REFUSE, username, msg->getSrc(), "Client busy.");
+        cout << "send: " << out << endl;
+        manager->sendMessage(&out);
+        return;
+    }
+
+    client_status = AUDIO;
+
+    const string& content = msg->getContent();
+    string s_addr_string = content.substr(0, content.find(' '));
+    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
+
+
+    cout << s_addr_string << " " << sin_port_string << endl;
+
+    struct sockaddr_in remote_peer_address{};
+    bzero(&remote_peer_address, sizeof(remote_peer_address));
+    remote_peer_address.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
+    remote_peer_address.sin_port = htons(atoi(sin_port_string.c_str()));
+    remote_peer_address.sin_family = AF_INET;
+
+
+    calling = true;
+    connected_peer = new Peer();
+    connected_peer->set_peer_name(msg->getSrc());
+    connected_peer->set_peer_address(remote_peer_address);
+
+
+}
+
+/*
+ * Client receive accept (for audio request) from other client
+ */
+void recv_audio_accept(Message *msg) {
+
+    client_status = ACCEPT;
+
+    const string& content = msg->getContent();
+    string s_addr_string = content.substr(0, content.find(' '));
+    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
+
+    cout << content << endl;
+
+    struct sockaddr_in addr{};
+    bzero(&addr, sizeof(addr));
+    addr.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
+    addr.sin_port = htons(atoi(sin_port_string.c_str()));
+    addr.sin_family = AF_INET;
+
+
+    string peer_name = msg->getSrc();
+    connected_peer->set_peer_address(addr);
+
+//    cout << "Try to sendto." << endl;
+//
+//    int ret = sendto(connected_peer->get_peer_socket(), "caller", 10, 0, (struct sockaddr*) &addr, addr_len);
+//    if(ret < 0) {
+//        perror("Error during send operation");
+//        exit(EXIT_FAILURE);
+//    }
+//
+//    cout << "Try to sendto end." << endl;
+
+
+
+    thread caller_thread(caller_routine);
+    caller_thread.detach();
+
+
+}
+
+void recv_audio_ringoff() {
+    client_status = RINGOFF;
+    safe_peer_delete();
+}
+
+void recv_audio_refuse() {
+    client_status = REFUSE;
+    safe_peer_delete();
+}
+
 void called_routine(){
+    cout << "Called routine start." << endl;
+
+    int socket = connected_peer->get_peer_socket();
+    sockaddr_in address;
+    int address_len;
+
+    char msg[MSG_SIZE];
+
+    int ret = recvfrom(socket, msg, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+    if(ret < 0) {
+        perror("Error during recv operation");
+        exit(EXIT_FAILURE);
+    }
+    cout << msg << endl;
+    cout << "Called routine end." << endl;
+
+    return;
+    /*
     cout << "Called routine start." << endl;
     int ret;
 
@@ -377,14 +522,20 @@ void called_routine(){
     char* out_buffer = (char*) malloc(buffer_size);
     char* in_buffer = (char*) malloc(buffer_size);
 
-//    char msg[MSG_SIZE];
+    char msg[MSG_SIZE];
     while(calling){
         
         // readi from audio
         // send to peer
         cout << "sendto.." << endl;
         if(calling){
-            int ret = sendAudio(out_buffer, buffer_size, socket, address, address_len);
+            // send audio
+            int ret = sendto(socket, "called", 10, 0, (struct sockaddr*) &address, address_len);
+            if(ret < 0) {
+                perror("Error during send operation");
+                exit(EXIT_FAILURE);
+            }
+//            int ret = sendAudio(out_buffer, buffer_size, socket, address, address_len);
         }
         cout << "sendto ok." << endl;
 
@@ -402,7 +553,16 @@ void called_routine(){
             } else{
                 // input available
                 if(calling){
-                    int ret = recvAudio(in_buffer, buffer_size, socket, address, address_len);
+                    // int ret = recvAudio(in_buffer, buffer_size, socket, address, address_len);
+
+                    memset(msg, 0, MSG_SIZE);
+                    int ret = recvfrom(socket, msg, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+                    if(ret < 0) {
+                        perror("Error during recv operation");
+                        exit(EXIT_FAILURE);
+                    }
+                    cout << msg << endl;
+
                 }
             }
         }
@@ -411,6 +571,89 @@ void called_routine(){
     }
 
     cout << "Called routine end." << endl;
+     */
+}
+
+void caller_routine(){
+
+    cout << "Caller routine start." << endl;
+
+    int socket = connected_peer->get_peer_socket();
+    sockaddr_in address = connected_peer->get_peer_address();
+    int address_len = sizeof(address);
+
+    int ret = sendto(socket, "caller", 10, 0, (struct sockaddr*) &address, address_len);
+    if(ret < 0) {
+        perror("Error during send operation");
+        exit(EXIT_FAILURE);
+    }
+    cout << "Caller routine end." << endl;
+
+    return;
+    /*
+    cout << "Caller routine start." << endl;
+    int ret;
+
+    int socket = connected_peer->get_peer_socket();
+    sockaddr_in address = connected_peer->get_peer_address();
+    int address_len = sizeof(address);
+
+
+    int buffer_size = audioManager.getSize();
+    char* out_buffer = (char*) malloc(buffer_size);
+    char* in_buffer = (char*) malloc(buffer_size);
+
+    char msg[MSG_SIZE];
+    while(calling){
+
+        // recv from peer
+        // writei to audio
+
+        if(LOG) cout << "recvfrom." << endl;
+        if(calling){
+
+            ret = available(socket, 0, 500);
+            if(ret < 0){
+                perror("Error during select operation");
+                exit(EXIT_FAILURE);
+            } else if(ret == 0) {
+                // timeout occurred
+                cout << "Timeout caller."<< endl;
+            } else{
+                // input available
+                if(calling){
+                    // int ret = recvAudio(in_buffer, buffer_size, socket, address, address_len);
+                    memset(msg, 0, MSG_SIZE);
+                    int ret = recvfrom(socket, msg, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+                    if(ret < 0) {
+                        perror("Error during recv operation");
+                        exit(EXIT_FAILURE);
+                    }
+                    cout << msg << endl;
+                }
+            }
+
+        }
+        if(LOG) cout << "recvfrom ok." << endl;
+
+        // readi from audio
+        // send to peer
+
+        if(LOG) cout << "sendto." << endl;
+        if(calling){
+            // send audio
+            int ret = sendto(socket, "caller", 10, 0, (struct sockaddr*) &address, address_len);
+            if(ret < 0) {
+                perror("Error during send operation");
+                exit(EXIT_FAILURE);
+            }
+//            int ret = sendAudio(out_buffer, buffer_size, socket, address, address_len);
+        }
+        if(LOG) cout << "sendto ok." << endl;
+
+    }
+    cout << "Caller routine end." << endl;
+*/
 }
 
 int recvAudio(char *buffer, int size, int socket, sockaddr_in address, int address_len) {
@@ -441,129 +684,7 @@ int sendAudio(char *buffer, int size, int socket, sockaddr_in address, int addre
     return 0;
 }
 
-void caller_routine(){
-    cout << "Caller routine start." << endl;
-    int ret;
 
-    int socket = connected_peer->get_peer_socket();
-    sockaddr_in address = connected_peer->get_peer_address();
-    int address_len = sizeof(address);
-
-
-    int buffer_size = audioManager.getSize();
-    char* out_buffer = (char*) malloc(buffer_size);
-    char* in_buffer = (char*) malloc(buffer_size);
-
-    while(calling){
-
-        // recv from peer
-        // writei to audio
-
-        if(LOG) cout << "recvfrom." << endl;
-        if(calling){
-
-            ret = available(socket, 0, 500);
-            if(ret < 0){
-                perror("Error during select operation");
-                exit(EXIT_FAILURE);
-            } else if(ret == 0) {
-                // timeout occurred
-                cout << "Timeout caller."<< endl;
-            } else{
-                // input available
-                if(calling){
-                    int ret = recvAudio(in_buffer, buffer_size, socket, address, address_len);
-                }
-            }
-
-        }
-        if(LOG) cout << "recvfrom ok." << endl;
-        
-        // readi from audio
-        // send to peer
-
-        if(LOG) cout << "sendto." << endl;
-        if(calling){
-            int ret = sendAudio(out_buffer, buffer_size, socket, address, address_len);
-        }
-        if(LOG) cout << "sendto ok." << endl;
-
-    }
-
-    cout << "Caller routine end." << endl;
-}
-
-
-/*
- * Client receive audio request
- */
-void recv_audio_request(Message *msg) {
-
-    if(calling){
-        // occupato in un altra chiamata
-        Message out(REFUSE, username, msg->getSrc(), "Client busy.");
-        cout << "send: " << out << endl;
-        manager->sendMessage(&out);
-        return;
-    }
-
-
-    client_status = AUDIO;
-
-    const string& content = msg->getContent();
-    string s_addr_string = content.substr(0, content.find(' '));
-    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
-
-    struct sockaddr_in remote_peer_address{};
-    bzero(&remote_peer_address, sizeof(remote_peer_address));
-    remote_peer_address.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
-    remote_peer_address.sin_port = htons(atoi(sin_port_string.c_str()));
-    remote_peer_address.sin_family = AF_INET;
-
-    calling = true;
-    connected_peer = new Peer();
-    connected_peer->set_peer_name(msg->getSrc());
-    connected_peer->set_peer_address(remote_peer_address);
-
-
-}
-
-/*
- * Client receive accept (for audio request) from other client
- */
-void recv_audio_accept(Message *msg) {
-
-    client_status = ACCEPT;
-
-    const string& content = msg->getContent();
-    string s_addr_string = content.substr(0, content.find(' '));
-    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
-
-    struct sockaddr_in addr{};
-    bzero(&addr, sizeof(addr));
-    addr.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
-    addr.sin_port = htons(atoi(sin_port_string.c_str()));
-    addr.sin_family = AF_INET;
-
-    string peer_name = msg->getSrc();
-
-    connected_peer->set_peer_address(addr);
-
-    thread caller_thread(caller_routine);
-    caller_thread.detach();
-
-
-}
-
-void recv_audio_ringoff() {
-    client_status = RINGOFF;
-    safe_peer_delete();
-}
-
-void recv_audio_refuse() {
-    client_status = REFUSE;
-    safe_peer_delete();
-}
 
 void safe_peer_delete() {
 
@@ -598,33 +719,45 @@ void sender(){
         }
 
 
-        if(!calling){
-            if(line == "chat" ) client_chat();
-            else if(line == "users" ) client_users();
-            else if(line == "quit" ) client_quit();
-            else if(line == "video" ) client_video();
-            else if(line == "audio" ) client_audio_request(); // client vuole chiamare un client
-            else{
-                cout << "Unknown command." << endl;
-                print_info_message();
-            }
+        if(line == "chat" ) client_chat();
+        else if(line == "users" ) client_users();
+        else if(line == "quit" ) client_quit();
+        else if(line == "video" ) client_video();
+        else if(line == "audio" ) client_audio_request();
+        else if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
+        else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
+        else if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
+        else cout << "Unknown status." << endl;
 
-        }else{
-            if(client_status == AUDIO){
-                if(connected_peer->is_address_init()){
-                    if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
-                    else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
-                    else cout << "Incaming call.. <accept> or <refuse> ?" << endl;
-                } else{
-                    if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
-                    else cout << "Outgoing call.. <refuse> ?" << endl;
-                }
-            } else if(client_status == ACCEPT){
-                if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
-                else cout << "Calling in progress.. <ringoff> ?" << endl;
-            } else cout << "Unknown status." << endl;
 
-        }
+
+//        if(!calling){
+//            if(line == "chat" ) client_chat();
+//            else if(line == "users" ) client_users();
+//            else if(line == "quit" ) client_quit();
+//            else if(line == "video" ) client_video();
+//            else if(line == "audio" ) client_audio_request(); // client vuole chiamare un client
+//            else{
+//                cout << "Unknown command." << endl;
+//                print_info_message();
+//            }
+//
+//        }else{
+//            if(client_status == AUDIO){
+//                if(connected_peer->is_address_init()){
+//                    if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
+//                    else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
+//                    else cout << "Incaming call.. <accept> or <refuse> ?" << endl;
+//                } else{
+//                    if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
+//                    else cout << "Outgoing call.. <refuse> ?" << endl;
+//                }
+//            } else if(client_status == ACCEPT){
+//                if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
+//                else cout << "Calling in progress.. <ringoff> ?" << endl;
+//            } else cout << "Unknown status." << endl;
+//
+//        }
 
     }
 }
