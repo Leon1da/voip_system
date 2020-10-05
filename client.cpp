@@ -460,11 +460,11 @@ void sender_audio_routine(){
     sockaddr_in address = connected_peer->get_peer_address();
     int address_len = sizeof(address);
 
-    while (running) {
+    while (calling) {
 
         audioManagerOut.read();
 
-        if(running){
+        if(calling){
             int ret = sendto(socket, audioManagerOut.getBuffer(), audioManagerOut.getSize(), 0,  (struct sockaddr*) &address, (socklen_t) address_len);
             if(ret < 0){
                 perror("sendto");
@@ -484,19 +484,20 @@ void receiver_audio_routine(){
     sockaddr_in address = connected_peer->get_peer_address();
     int address_len = sizeof(address);
 
-    while (running) {
+    while (calling) {
 
         char *buffer = audioManagerIn.getBuffer();
         int size = audioManagerIn.getSize();
-
-        int ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
-        if(ret < 0){
-            perror("sendto");
-            exit(EXIT_FAILURE);
-        } else if(ret == 0) {
-            cout << "end of file on input" << endl;
-            break;
-        } else if (ret != size) cout << "short read: read " << ret << " bytes" << endl;
+        if(calling){
+            int ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+            if(ret < 0){
+                perror("sendto");
+                exit(EXIT_FAILURE);
+            } else if(ret == 0) {
+                cout << "end of file on input" << endl;
+                break;
+            } else if (ret != size) cout << "short read: read " << ret << " bytes" << endl;
+        }
 
         audioManagerIn.write();
 
@@ -509,7 +510,7 @@ void receiver_audio_routine(){
 
 void called_routine(){
 
-    cout << "Caller routine start." << endl;
+    cout << "Called routine start." << endl;
 
     cout << "Audio Manager init.." << endl;
     audioManagerIn.init_playback();
@@ -527,7 +528,7 @@ void called_routine(){
     audioManagerOut.destroy_capture();
     cout << "Audio Manager destroyed." << endl;
 
-    cout << "Caller routine end." << endl;
+    cout << "Called routine end." << endl;
 
     /*
     cout << "Called routine start." << endl;
@@ -612,6 +613,7 @@ void caller_routine(){
 
     cout << "Caller routine end." << endl;
 
+    /*
     int ret;
 
     int socket = connected_peer->get_peer_socket();
@@ -635,7 +637,7 @@ void caller_routine(){
         audioManagerIn.write();
 
     }
-
+*/
 
 //    while(calling){
 //        // recv from peer - writei to audio
