@@ -1,58 +1,51 @@
 //
-// Created by leonardo on 28/09/20.
+// Created by leonardo on 04/10/20.
 //
 
-#ifndef CHAT_UDP_AUDIOMANAGER_H
-#define CHAT_UDP_AUDIOMANAGER_H
+#ifndef VOIP2_0_AUDIOMANAGER_H
+#define VOIP2_0_AUDIOMANAGER_H
 
-#include <iostream>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <unistd.h>
-#include <string>
 
 #include <alsa/asoundlib.h>
-#include <alsa/control.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
+#include <iostream>
 
 using namespace std;
 
-
 class AudioManager {
 
-    // char *buffer;
-    snd_pcm_t *handle;
-    // long loops;
+private:
+
+    long loops;
     int rc;
     int size;
-    unsigned int val;
+    snd_pcm_t *handle;
     snd_pcm_hw_params_t *params;
+    unsigned int val;
     int dir;
     snd_pcm_uframes_t frames;
+    char *buffer;
 
 public:
-    // char *getBuffer() const;
+    void init_playback();
+
+    void destroy_playback();
+
+    void write();
+
+    void read();
 
     int getSize() const;
 
-    AudioManager();
+    void setSize(int size);
 
-    int initAudioManager();
+    char *getBuffer() const;
 
-    int closeAudioManager();
+    void setBuffer(char *buffer);
 
-    int readAudio(char *buffer);
+    void init_capture();
 
-    int writeAudio(char *buffer);
-
-
-
-
-
+    void destroy_capture();
 };
 
 
-#endif //CHAT_UDP_AUDIOMANAGER_H
+#endif //VOIP2_0_AUDIOMANAGER_H
