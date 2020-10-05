@@ -489,14 +489,26 @@ void receiver_audio_routine(){
         char *buffer = audioManagerIn.getBuffer();
         int size = audioManagerIn.getSize();
         if(calling){
-            int ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+            int ret = available(socket, 0, 50000);
             if(ret < 0){
-                perror("sendto");
+                perror("Error during select operation");
                 exit(EXIT_FAILURE);
             } else if(ret == 0) {
-                cout << "end of file on input" << endl;
-                break;
-            } else if (ret != size) cout << "short read: read " << ret << " bytes" << endl;
+                // timeout occurred
+                cout << "Timeout receiver_audio_routine." << endl;
+                if(!calling) break;
+            } else{
+                // available
+                ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+                if(ret < 0){
+                    perror("sendto");
+                    exit(EXIT_FAILURE);
+                } else if(ret == 0) {
+                    cout << "end of file on input" << endl;
+                    break;
+                } else if (ret != size) cout << "short read: read " << ret << " bytes" << endl;
+            }
+
         }
 
         audioManagerIn.write();
