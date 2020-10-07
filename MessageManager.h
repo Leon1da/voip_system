@@ -23,6 +23,14 @@
 
 #define MSG_SIZE MSG_HEADER_SIZE + MSG_CONTENT_SIZE
 
+/*
+ *
+ * [              MSG              ]
+ * [       HEADER       ][ CONTENT ]
+ * [ CODE ][ SRC ][ DST ][ CONTENT ]
+ *
+*/
+
 using namespace std;
 
 

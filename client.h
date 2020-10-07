@@ -25,6 +25,9 @@
 
 #include "config.h"
 #include "MessageManager.h"
+#include "peer.h"
+#include "user.h"
+
 
 
 int init_server_udp_connection(sockaddr_in socket_address);

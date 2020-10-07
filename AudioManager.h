@@ -8,6 +8,7 @@
 
 #include <alsa/asoundlib.h>
 #include <iostream>
+#include "config.h"
 
 using namespace std;
 
@@ -15,15 +16,11 @@ class AudioManager {
 
 private:
 
-    long loops;
-    int rc;
-    int size;
-    snd_pcm_t *handle;
-    snd_pcm_hw_params_t *params;
-    unsigned int val;
-    int dir;
-    snd_pcm_uframes_t frames;
-    char *buffer;
+    snd_pcm_t *handle{};
+    snd_pcm_uframes_t frames{};
+
+    int size{};
+    char *buffer{};
 
 public:
     void init_playback();

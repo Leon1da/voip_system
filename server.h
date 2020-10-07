@@ -18,6 +18,8 @@
 
 #include "config.h"
 #include "MessageManager.h"
+#include "peer.h"
+#include "user.h"
 
 #ifndef CHAT_UDP_SERVER_H
 #define CHAT_UDP_SERVER_H

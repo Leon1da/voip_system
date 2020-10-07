@@ -8,15 +8,20 @@
 void AudioManager::init_capture() {
 
     /* Open PCM device. */
-    rc = snd_pcm_open(&handle, "default",
+    int rc = snd_pcm_open(&handle, "default",
                       SND_PCM_STREAM_CAPTURE, 0);
     if (rc < 0) {
-        fprintf(stderr,
-                "unable to open pcm device: %s\n",
-                snd_strerror(rc));
-        exit(1);
+        cout << "unable to open pcm device: " << snd_strerror(rc) << endl;
+        exit(EXIT_FAILURE);
     }
 
+    if(snd_config_update_free_global() < 0){
+        cout << "snd_config_update_free_global error." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+
+    snd_pcm_hw_params_t *params{};
     /* Allocate a hardware parameters object. */
     snd_pcm_hw_params_alloca(&params);
 
@@ -36,8 +41,10 @@ void AudioManager::init_capture() {
     /* Two channels (stereo) */
     snd_pcm_hw_params_set_channels(handle, params, 2);
 
+
+    int dir = 0;
     /* 44100 bits/second sampling rate (CD quality) */
-    val = 44100;
+    unsigned int val = 44100;
     snd_pcm_hw_params_set_rate_near(handle, params,
                                     &val, &dir);
 
@@ -49,10 +56,8 @@ void AudioManager::init_capture() {
     /* Write the parameters to the driver */
     rc = snd_pcm_hw_params(handle, params);
     if (rc < 0) {
-        fprintf(stderr,
-                "unable to set hw parameters: %s\n",
-                snd_strerror(rc));
-        exit(1);
+        cout << "unable to set hw parameters: " << snd_strerror(rc) << endl;
+        exit(EXIT_FAILURE);
     }
 
     /* Use a buffer large enough to hold one period */
@@ -64,7 +69,6 @@ void AudioManager::init_capture() {
     /* We want to loop for 5 seconds */
     snd_pcm_hw_params_get_period_time(params,
                                       &val, &dir);
-    loops = 5000000 / val;
 
 
 }
@@ -72,15 +76,20 @@ void AudioManager::init_capture() {
 void AudioManager::init_playback() {
 
     /* Open PCM device. */
-    rc = snd_pcm_open(&handle, "default",
+    int rc = snd_pcm_open(&handle, "default",
                       SND_PCM_STREAM_PLAYBACK, 0);
     if (rc < 0) {
-        fprintf(stderr,
-                "unable to open pcm device: %s\n",
-                snd_strerror(rc));
-        exit(1);
+        cout << "unable to open pcm device: " << snd_strerror(rc) << endl;
+        exit(EXIT_FAILURE);
     }
 
+    if(snd_config_update_free_global() < 0){
+        cout << "snd_config_update_free_global error." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+
+    snd_pcm_hw_params_t *params{};
     /* Allocate a hardware parameters object. */
     snd_pcm_hw_params_alloca(&params);
 
@@ -100,8 +109,10 @@ void AudioManager::init_playback() {
     /* Two channels (stereo) */
     snd_pcm_hw_params_set_channels(handle, params, 2);
 
+
+    int dir = 0;
     /* 44100 bits/second sampling rate (CD quality) */
-    val = 44100;
+    unsigned int val = 44100;
     snd_pcm_hw_params_set_rate_near(handle, params,
                                     &val, &dir);
 
@@ -113,11 +124,10 @@ void AudioManager::init_playback() {
     /* Write the parameters to the driver */
     rc = snd_pcm_hw_params(handle, params);
     if (rc < 0) {
-        fprintf(stderr,
-                "unable to set hw parameters: %s\n",
-                snd_strerror(rc));
-        exit(1);
+        cout << "unable to set hw parameters: " << snd_strerror(rc) << endl;
+        exit(EXIT_FAILURE);
     }
+
 
     /* Use a buffer large enough to hold one period */
     snd_pcm_hw_params_get_period_size(params, &frames,
@@ -128,15 +138,12 @@ void AudioManager::init_playback() {
     /* We want to loop for 5 seconds */
     snd_pcm_hw_params_get_period_time(params,
                                       &val, &dir);
-    /* 5 seconds in microseconds divided by
-     * period time */
-    loops = 5000000 / val;
+
 
 
 }
 
 void AudioManager::destroy_capture() {
-
 //    cout << "snd_pcm_drain.." << endl;
 //    if(snd_pcm_drain(handle) < 0){
 //        cout << "snd_pcm_drain error" << endl;
@@ -144,17 +151,25 @@ void AudioManager::destroy_capture() {
 //    }
 //    cout << "snd_pcm_drain ok" << endl;
 
-    cout << "snd_pcm_close.." << endl;
+    if(LOG) cout << "snd_pcm_close.." << endl;
     if(snd_pcm_close(handle) < 0){
         cout << "snd_pcm_close error" << endl;
         exit(EXIT_FAILURE);
     }
-    cout << "snd_pcm_close ok" << endl;
+    if(LOG) cout << "snd_pcm_close ok" << endl;
 
 
-    cout << "free buffer.." << endl;
+    if(LOG) cout << "free buffer.." << endl;
     free(buffer);
-    cout << "buffer freed" << endl;
+    if(LOG) cout << "buffer freed" << endl;
+
+    if(LOG) cout << "snd_config_update_free_global()" <<  endl;
+    if(snd_config_update_free_global() < 0){
+        cout << "snd_config_update_free_global error." << endl;
+        exit(EXIT_FAILURE);
+    }
+    if(LOG) cout << "snd_config_update_free_global() ok." <<  endl;
+
 }
 
 void AudioManager::destroy_playback() {
@@ -169,25 +184,27 @@ void AudioManager::destroy_playback() {
         exit(EXIT_FAILURE);
     }
 
-
     free(buffer);
+
+    if(snd_config_update_free_global() < 0){
+        cout << "snd_config_update_free_global error." << endl;
+        exit(EXIT_FAILURE);
+    }
+
 
 }
 
 void AudioManager::write() {
 
-    rc = snd_pcm_writei(handle, buffer, frames);
+    int rc = snd_pcm_writei(handle, buffer, frames);
     if (rc == -EPIPE) {
         /* EPIPE means underrun */
-        fprintf(stderr, "underrun occurred\n");
+        if(LOG) cout << "underrun occurred" << endl;
         snd_pcm_prepare(handle);
     } else if (rc < 0) {
-        fprintf(stderr,
-                "error from writei: %s\n",
-                snd_strerror(rc));
+        if(LOG) cout << "error from writei: " << snd_strerror(rc) << endl;
     }  else if (rc != (int)frames) {
-        fprintf(stderr,
-                "short write, write %d frames\n", rc);
+        if(LOG) cout << "short write, write " << rc << "frames." << endl;
     }
 
 }
@@ -210,17 +227,15 @@ void AudioManager::setBuffer(char *buffer) {
 
 void AudioManager::read() {
 
-    rc = snd_pcm_readi(handle, buffer, frames);
+    int rc = snd_pcm_readi(handle, buffer, frames);
     if (rc == -EPIPE) {
         /* EPIPE means overrun */
-        fprintf(stderr, "overrun occurred\n");
+        if(LOG) cout << "overrun occurred." << endl;
         snd_pcm_prepare(handle);
     } else if (rc < 0) {
-        fprintf(stderr,
-                "error from read: %s\n",
-                snd_strerror(rc));
+        if(LOG) cout << "error from read: " << snd_strerror(rc) << endl;
     } else if (rc != (int)frames) {
-        fprintf(stderr, "short read, read %d frames\n", rc);
+        if(LOG) cout << "short read, read " << rc << "frames." << endl;
     }
 
 }

@@ -462,6 +462,7 @@ void sender_audio_routine(){
         if(calling){
             int ret = sendto(socket, audioManagerOut.getBuffer(), audioManagerOut.getSize(), 0,  (struct sockaddr*) &address, (socklen_t) address_len);
             if(ret < 0){
+                if(errno == ECONNREFUSED) break;
                 perror("sendto");
                 exit(EXIT_FAILURE);
             } else if(ret != audioManagerOut.getSize()) cout << "short write: wrote %d bytes" << endl;
@@ -490,18 +491,16 @@ void receiver_audio_routine(){
                 exit(EXIT_FAILURE);
             } else if(ret == 0) {
                 // timeout occurred
-                cout << "Timeout receiver_audio_routine." << endl;
+                if(LOG) cout << "Timeout receiver_audio_routine." << endl;
                 if(!calling) break;
             } else{
                 // available
                 ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
                 if(ret < 0){
-                    perror("sendto");
+                    if(errno == ECONNREFUSED) break;
+                    perror("recvfrom");
                     exit(EXIT_FAILURE);
-                } else if(ret == 0) {
-                    cout << "end of file on input" << endl;
-                    break;
-                } else if (ret != size) cout << "short read: read " << ret << " bytes" << endl;
+                }
             }
 
         }
@@ -519,21 +518,26 @@ void call_routine(){
 
     cout << "Call routine start." << endl;
 
-    cout << "Audio Manager init.." << endl;
+    if(LOG) cout << "Audio Manager init.." << endl;
     audioManagerIn.init_playback();
     audioManagerOut.init_capture();
-    cout << "Audio Manager ok." << endl;
+    if(LOG) cout << "Audio Manager ok." << endl;
 
+    if(LOG) cout << "sender thread start." << endl;
     thread sender_audio(sender_audio_routine);
+    if(LOG) cout << "receiver thread start." << endl;
     thread receiver_audio(receiver_audio_routine);
 
+
+    if(LOG) cout << "receiver thread join." << endl;
     receiver_audio.join();
+    if(LOG) cout << "sender thread join." << endl;
     sender_audio.join();
 
-    cout << "Audio Manager destroy.." << endl;
+    if(LOG) cout << "Audio Manager destroy.." << endl;
     audioManagerIn.destroy_playback();
     audioManagerOut.destroy_capture();
-    cout << "Audio Manager destroyed." << endl;
+    if(LOG) cout << "Audio Manager destroyed." << endl;
 
     cout << "Call routine end." << endl;
 
