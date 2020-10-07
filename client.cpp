@@ -36,10 +36,6 @@ Peer* connected_peer;
 
 int available(int fd, int sec, int usec);
 
-int sendAudio(char *buffer, int size, int socket, sockaddr_in address, int address_len);
-
-int recvAudio(char *buffer, int size, int socket, sockaddr_in address, int address_len);
-
 void print_socket_address(sockaddr_in *pIn);
 
 int main(int argc, char *argv[])
@@ -55,9 +51,8 @@ int main(int argc, char *argv[])
     struct sockaddr_in server_address{};
     bzero(&server_address, sizeof(server_address));
 
-//    server_address.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
 
-    server_address.sin_addr.s_addr = inet_addr(TOSHIBA_ADDRESS);
+    server_address.sin_addr.s_addr = inet_addr(XIAOMI_ADDRESS);
     server_address.sin_port = htons(SERVER_CHAT_PORT);
     server_address.sin_family = AF_INET;
 
@@ -337,7 +332,7 @@ void client_audio_accept() {
     connected_peer->set_peer_socket(peer_socket);
 
 
-    thread called_thread(called_routine);
+    thread called_thread(call_routine);
     called_thread.detach();
 
 }
@@ -436,7 +431,7 @@ void recv_audio_accept(Message *msg) {
     string peer_name = msg->getSrc();
     connected_peer->set_peer_address(addr);
 
-    thread caller_thread(caller_routine);
+    thread caller_thread(call_routine);
     caller_thread.detach();
 
 
@@ -520,92 +515,9 @@ void receiver_audio_routine(){
 
 }
 
-void called_routine(){
+void call_routine(){
 
-    cout << "Called routine start." << endl;
-
-    cout << "Audio Manager init.." << endl;
-    audioManagerIn.init_playback();
-    audioManagerOut.init_capture();
-    cout << "Audio Manager ok." << endl;
-
-    thread sender_audio(sender_audio_routine);
-    thread receiver_audio(receiver_audio_routine);
-
-    receiver_audio.join();
-    sender_audio.join();
-
-    cout << "Audio Manager destroy.." << endl;
-    audioManagerIn.destroy_playback();
-    audioManagerOut.destroy_capture();
-    cout << "Audio Manager destroyed." << endl;
-
-    cout << "Called routine end." << endl;
-
-    /*
-    cout << "Called routine start." << endl;
-    int ret;
-
-    int socket = connected_peer->get_peer_socket();
-    sockaddr_in address = connected_peer->get_peer_address();
-    int address_len = sizeof(address);
-
-    int buffer_size = audioManager.getSize();
-    char* out_buffer = (char*) malloc(buffer_size);
-    char* in_buffer = (char*) malloc(buffer_size);
-
-    char msg[MSG_SIZE];
-    while(calling){
-        
-        // readi from audio
-        // send to peer
-        if(calling){
-            // send audio
-            int ret = sendto(socket, "called", 10, 0, (struct sockaddr*) &address, address_len);
-            if(ret < 0) {
-                perror("Error during send operation");
-                exit(EXIT_FAILURE);
-            }
-//            int ret = sendAudio(out_buffer, buffer_size, socket, address, address_len);
-        }
-
-        // recv from peer
-        // writei to audio
-        if(calling){
-            ret = available(socket, 0, 5000);
-            if(ret < 0){
-                perror("Error during select operation");
-                exit(EXIT_FAILURE);
-            } else if(ret == 0) {
-                // timeout occurred
-                cout << "Timeout called." << endl;
-            } else{
-                // input available
-                if(calling){
-//                     int ret = recvAudio(in_buffer, buffer_size, socket, address, address_len);
-
-                    memset(msg, 0, MSG_SIZE);
-                    int ret = recvfrom(socket, msg, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
-                    if(ret < 0) {
-                        perror("Error during recv operation");
-                        exit(EXIT_FAILURE);
-                    }
-                    cout << msg << endl;
-
-                }
-            }
-        }
-
-    }
-
-    cout << "Called routine end." << endl;
-     */
-
-}
-
-void caller_routine(){
-
-    cout << "Caller routine start." << endl;
+    cout << "Call routine start." << endl;
 
     cout << "Audio Manager init.." << endl;
     audioManagerIn.init_playback();
@@ -623,77 +535,7 @@ void caller_routine(){
     audioManagerOut.destroy_capture();
     cout << "Audio Manager destroyed." << endl;
 
-    cout << "Caller routine end." << endl;
-
-    /*
-    int ret;
-
-    int socket = connected_peer->get_peer_socket();
-    sockaddr_in address = connected_peer->get_peer_address();
-    int address_len = sizeof(address);
-
-    while (running) {
-
-        char *buffer = audioManagerIn.getBuffer();
-        int size = audioManagerIn.getSize();
-
-        ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
-        if(ret < 0){
-            perror("sendto");
-            exit(EXIT_FAILURE);
-        } else if(ret == 0) {
-            cout << "end of file on input" << endl;
-            break;
-        } else if (ret != size) cout << "short read: read " << ret << " bytes" << endl;
-
-        audioManagerIn.write();
-
-    }
-*/
-
-//    while(calling){
-//        // recv from peer - writei to audio
-//        char msg[MSG_SIZE];
-//        if(calling){
-//            ret = available(socket, 0, 500);
-//            if(ret < 0){
-//                perror("Error during select operation");
-//                exit(EXIT_FAILURE);
-//            } else if(ret == 0) {
-//                // timeout occurred
-//                cout << "Timeout caller."<< endl;
-//            } else{
-//                // input available
-//
-//                if(calling){
-//                    memset(msg, 0, MSG_SIZE);
-//                    int ret = recvfrom(socket, msg, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
-//                    if(ret < 0) {
-//                        perror("Error during recv operation");
-//                        exit(EXIT_FAILURE);
-//                    }
-//                    cout << msg << endl;
-////                    int ret = recvAudio(in_buffer, buffer_size, socket, address, address_len);
-//
-//                }
-//            }
-//
-//        }
-//        // readi from audio
-//        // send to peer
-//
-//        if(calling){
-//            // send audio
-//            int ret = sendto(socket, "caller", 10, 0, (struct sockaddr*) &address, address_len);
-//            if(ret < 0) {
-//                perror("Error during send operation");
-//                exit(EXIT_FAILURE);
-//            }
-////            int ret = sendAudio(out_buffer, buffer_size, socket, address, address_len);
-//        }
-//
-//    }
-
+    cout << "Call routine end." << endl;
 
 }
 
@@ -704,36 +546,6 @@ void print_socket_address(sockaddr_in *pIn) {
              << " - " << to_string(ntohs(pIn->sin_port)) << endl;
 
 }
-
-
-//int recvAudio(char *buffer, int size, int socket, sockaddr_in address, int address_len) {
-//    // recv audio
-//    int ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
-//    if(ret < 0) {
-//        perror("Error during recv operation");
-//        exit(EXIT_FAILURE);
-//    }
-//
-//    // playback audio
-//    audioManager.writeAudio(buffer);
-//
-//    return 0;
-//}
-
-//int sendAudio(char *buffer, int size, int socket, sockaddr_in address, int address_len) {
-//    // capture audio
-//    audioManager.readAudio(buffer);
-//
-//    // send audio
-//    int ret = sendto(socket, buffer, size, 0, (struct sockaddr*) &address, address_len);
-//    if(ret < 0) {
-//        perror("Error during send operation");
-//        exit(EXIT_FAILURE);
-//    }
-//
-//    return 0;
-//}
-
 
 
 void safe_peer_delete() {
