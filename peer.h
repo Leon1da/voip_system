@@ -71,5 +71,7 @@ public:
     }
 
 
+    string address;
+    string port;
 };
 

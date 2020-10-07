@@ -260,30 +260,30 @@ void client_audio_request() {
         }
     }
 
-    bool inLAN;
-    // client select dst of call
-    cout << "Do you want call a user in or out LAN? ( Type <in> or <out> )" << endl;
-    string serviceType;
-    while (running){
-        int ret = available(0, 1, 0);
-        if(ret < 0) {
-            if(errno == EINTR) continue;
-            //error
-        } else if(ret == 0 ) {
-            //timeout
-            if(!running) return;
-        } else{
-            getline(cin,serviceType);
-            break;
-        }
-    }
-    if(serviceType == "in") inLAN = true;
-    else inLAN = false;
+//    bool inLAN;
+//    // client select dst of call
+//    cout << "Do you want call a user in or out LAN? ( Type <in> or <out> )" << endl;
+//    string serviceType;
+//    while (running){
+//        int ret = available(0, 1, 0);
+//        if(ret < 0) {
+//            if(errno == EINTR) continue;
+//            //error
+//        } else if(ret == 0 ) {
+//            //timeout
+//            if(!running) return;
+//        } else{
+//            getline(cin,serviceType);
+//            break;
+//        }
+//    }
+//    if(serviceType == "in") inLAN = true;
+//    else inLAN = false;
 
     struct sockaddr_in peer_address{};
     bzero(&peer_address, sizeof(peer_address));
     peer_address.sin_addr.s_addr = INADDR_ANY;
-    peer_address.sin_port = inLAN ? 0 : P2P_PORT; // if in LAN call random port else PORT FORWARD
+    peer_address.sin_port = P2P_PORT; // if in LAN call random port else PORT FORWARD
     peer_address.sin_family = AF_INET;
 
     int socket = init_server_udp_connection(peer_address);
@@ -293,18 +293,19 @@ void client_audio_request() {
     }
 
 
-    struct sockaddr_in peertopeer_address{};
-    socklen_t len_peer = sizeof(peertopeer_address);
-    int ret = getsockname(socket, (struct sockaddr*)&peertopeer_address, &len_peer);
-    if(ret < 0){
-        perror("Error during getsockname operation.");
-        exit(EXIT_FAILURE);
-    }
+//    struct sockaddr_in peertopeer_address{};
+//    socklen_t len_peer = sizeof(peertopeer_address);
+//    int ret = getsockname(socket, (struct sockaddr*)&peertopeer_address, &len_peer);
+//    if(ret < 0){
+//        perror("Error during getsockname operation.");
+//        exit(EXIT_FAILURE);
+//    }
 
     string address_info;
+    address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(P2P_PORT);
 
-    if(inLAN) address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peertopeer_address.sin_port)); // public ip, private ip and random port
-    else address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(P2P_PORT); // public ip, private ip and mapped port
+//    if(inLAN) address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peertopeer_address.sin_port)); // public ip, private ip and random port
+//    else address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(P2P_PORT); // public ip, private ip and mapped port
 
     Message out(AUDIO, username, dst, address_info);
     cout << "send: " << out << endl;
@@ -326,8 +327,17 @@ void client_audio_accept() {
 
     client_status = ACCEPT;
 
-    sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
+//    sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
+//    remote_peer_addr.sin_family = AF_INET;
+    struct sockaddr_in remote_peer_addr;
+    bzero(&remote_peer_addr, sizeof(remote_peer_addr));
+    remote_peer_addr.sin_addr.s_addr = inet_addr(connected_peer->address.c_str());
+    remote_peer_addr.sin_port = htons(atoi(connected_peer->port.c_str())); // if in LAN call random port else PORT FORWARD
     remote_peer_addr.sin_family = AF_INET;
+
+    connected_peer->set_peer_address(remote_peer_addr);
+
+    print_socket_address(&remote_peer_addr);
 
     int peer_socket = init_client_udp_connection(remote_peer_addr);
     if(peer_socket < 0){
@@ -344,7 +354,12 @@ void client_audio_accept() {
         exit(EXIT_FAILURE);
     }
 
-    string address_info = string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peer_addr.sin_port));
+    print_socket_address(&peer_addr);
+
+    string address_info = string(public_ip) + " " + inet_ntoa(peer_addr.sin_addr) + " " + to_string(P2P_PORT);
+//    string address_info = string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peer_addr.sin_port));
+//    string address_info = string(public_ip) + " " + to_string(P2P_PORT);
+
 
     Message out(ACCEPT, username, connected_peer->get_peer_name(), address_info);
     cout << "send: " << out << endl;
@@ -413,7 +428,7 @@ void recv_audio_request(Message *msg) {
 //    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
 
     string public_address_string = content.substr(0, content.find(' '));
-    string private_address_string = content.substr(content.find(' ') + 1, content.find(' ', content.find(' ')));
+    string private_address_string = content.substr(content.find(' ') + 1, content.find(' ', content.find(' ')) + 1);
     string port_string = content.substr(content.find(' ', content.find(' ') + 1) + 1, content.size());
 
 //    cout << "address info: " << public_address_string << " " << private_address_string << " " << port_string << endl;
@@ -435,17 +450,20 @@ void recv_audio_request(Message *msg) {
 
 
 
-    struct sockaddr_in remote_peer_address{};
-    bzero(&remote_peer_address, sizeof(remote_peer_address));
-    remote_peer_address.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
-    remote_peer_address.sin_port = htons(atoi(sin_port_string.c_str()));
-    remote_peer_address.sin_family = AF_INET;
+//    struct sockaddr_in remote_peer_address{};
+//    bzero(&remote_peer_address, sizeof(remote_peer_address));
+//    remote_peer_address.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
+//    remote_peer_address.sin_port = htons(atoi(sin_port_string.c_str()));
+//    remote_peer_address.sin_family = AF_INET;
 
+//    print_socket_address(&remote_peer_address);
 
     calling = true;
     connected_peer = new Peer();
     connected_peer->set_peer_name(msg->getSrc());
-    connected_peer->set_peer_address(remote_peer_address);
+//    connected_peer->set_peer_address(remote_peer_address);
+    connected_peer->address = s_addr_string;
+    connected_peer->port = sin_port_string;
 
 
 }
@@ -458,17 +476,37 @@ void recv_audio_accept(Message *msg) {
     client_status = ACCEPT;
 
     const string& content = msg->getContent();
-    string s_addr_string = content.substr(0, content.find(' '));
-    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
+//    string s_addr_string = content.substr(0, content.find(' '));
+//    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
 
-    cout << content << endl;
+    string public_address_string = content.substr(0, content.find(' '));
+    string private_address_string = content.substr(content.find(' ') + 1, content.find(' ', content.find(' ')) + 1);
+    string port_string = content.substr(content.find(' ', content.find(' ') + 1) + 1, content.size());
+
+    cout << "public ip: " << public_address_string << endl;
+    cout << "private ip: " << private_address_string << endl;
+    cout << "port: " << port_string << endl;
+
+    bool inLAN;
+    if(private_address_string == public_ip) inLAN = true;
+    else inLAN = false;
+
+//    struct sockaddr_in addr{};
+//    bzero(&addr, sizeof(addr));
+//    addr.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
+//    addr.sin_port = htons(atoi(sin_port_string.c_str()));
+//    addr.sin_family = AF_INET;
+
 
     struct sockaddr_in addr{};
     bzero(&addr, sizeof(addr));
-    addr.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
-    addr.sin_port = htons(atoi(sin_port_string.c_str()));
     addr.sin_family = AF_INET;
+    if(inLAN) addr.sin_addr.s_addr = inet_addr(private_address_string.c_str());
+    else addr.sin_addr.s_addr = inet_addr(public_address_string.c_str());
+    addr.sin_port = htons(atoi(port_string.c_str()));
 
+
+//  print_socket_address(&addr);
 
     string peer_name = msg->getSrc();
     connected_peer->set_peer_address(addr);
