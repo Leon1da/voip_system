@@ -7,15 +7,17 @@
 
 #endif //CHAT_UDP_CONFIG_H
 
-#define SERVER_ADDRESS "127.0.0.1"
-#define SERVER_AUTH_PORT 5000
-#define SERVER_CHAT_PORT 6000
-#define P2P_AUDIO_PORT 4000
+#define XIAOMI_ADDRESS "192.168.1.69"
+#define TOSHIBA_ADDRESS "192.168.1.25"
+#define LOCALHOST_ADDRESS "127.0.0.1"
+
+#define CS_PORT 30000
+#define P2P_PORT 30020
 
 #define MAX_CONN_QUEUE 5
 
 
-#define LOG 1
+#define LOG 0
 
 
 

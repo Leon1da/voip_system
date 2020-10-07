@@ -10,8 +10,6 @@
 #include "client.h"
 #include "AudioManager.h"
 
-#define XIAOMI_ADDRESS "192.168.1.69"
-#define TOSHIBA_ADDRESS "192.168.1.25"
 
 using namespace std;
 
@@ -53,7 +51,7 @@ int main(int argc, char *argv[])
 
 
     server_address.sin_addr.s_addr = inet_addr(XIAOMI_ADDRESS);
-    server_address.sin_port = htons(SERVER_CHAT_PORT);
+    server_address.sin_port = htons(CS_PORT);
     server_address.sin_family = AF_INET;
 
     int client_server_socket = init_client_udp_connection(server_address);
@@ -262,10 +260,30 @@ void client_audio_request() {
         }
     }
 
+    bool inLAN;
+    // client select dst of call
+    cout << "Do you want call a user in or out LAN? ( Type <in> or <out> )" << endl;
+    string serviceType;
+    while (running){
+        int ret = available(0, 1, 0);
+        if(ret < 0) {
+            if(errno == EINTR) continue;
+            //error
+        } else if(ret == 0 ) {
+            //timeout
+            if(!running) return;
+        } else{
+            getline(cin,serviceType);
+            break;
+        }
+    }
+    if(serviceType == "in") inLAN = true;
+    else inLAN = false;
+
     struct sockaddr_in peer_address{};
     bzero(&peer_address, sizeof(peer_address));
     peer_address.sin_addr.s_addr = INADDR_ANY;
-    peer_address.sin_port = 0;
+    peer_address.sin_port = inLAN ? 0 : P2P_PORT; // if in LAN call random port else PORT FORWARD
     peer_address.sin_family = AF_INET;
 
     int socket = init_server_udp_connection(peer_address);
@@ -283,7 +301,10 @@ void client_audio_request() {
         exit(EXIT_FAILURE);
     }
 
-    string address_info = string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peertopeer_address.sin_port)); // ip publico e porta casuale
+    string address_info;
+
+    if(inLAN) address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peertopeer_address.sin_port)); // public ip, private ip and random port
+    else address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(P2P_PORT); // public ip, private ip and mapped port
 
     Message out(AUDIO, username, dst, address_info);
     cout << "send: " << out << endl;
@@ -388,10 +409,31 @@ void recv_audio_request(Message *msg) {
     client_status = AUDIO;
 
     const string& content = msg->getContent();
-    string s_addr_string = content.substr(0, content.find(' '));
-    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
+//    string s_addr_string = content.substr(0, content.find(' '));
+//    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
 
-    cout << "address info: " << s_addr_string << " " << sin_port_string << endl;
+    string public_address_string = content.substr(0, content.find(' '));
+    string private_address_string = content.substr(content.find(' ') + 1, content.find(' ', content.find(' ')));
+    string port_string = content.substr(content.find(' ', content.find(' ') + 1) + 1, content.size());
+
+//    cout << "address info: " << public_address_string << " " << private_address_string << " " << port_string << endl;
+    cout << "public ip: " << public_address_string << endl;
+    cout << "private ip: " << private_address_string << endl;
+    cout << "port: " << port_string << endl;
+
+    bool inLAN;
+    if(public_address_string == public_ip) inLAN = true;
+    else inLAN = false;
+
+    if(inLAN) cout << "In LAN call." << endl;
+    else cout << "Out LAN call." << endl;
+
+    string s_addr_string;
+    if(inLAN)  s_addr_string = private_address_string;
+    else s_addr_string = public_address_string;
+    string sin_port_string = port_string;
+
+
 
     struct sockaddr_in remote_peer_address{};
     bzero(&remote_peer_address, sizeof(remote_peer_address));
@@ -701,15 +743,15 @@ int init_server_udp_connection(sockaddr_in socket_address) {
     cout << "UDP protocol setupping..." << endl;
 
     int ret, socket_udp;
-    cout << " - socket.." << endl;
+    if(LOG) cout << " - socket.." << endl;
     socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
     if(socket_udp < 0) return socket_udp;
-    cout << " - socket succeeded." << endl;
+    if(LOG) cout << " - socket succeeded." << endl;
 
-    cout << " - bind.." << endl;
+    if(LOG) cout << " - bind.." << endl;
     ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
     if(ret < 0) return ret;
-    cout << " - bind succeeded." << endl;
+    if(LOG) cout << " - bind succeeded." << endl;
 
     cout << "Udp protocol configured." << endl;
 
@@ -720,17 +762,17 @@ int init_client_udp_connection(sockaddr_in socket_address) {
 
     cout << "UDP protocol setupping..." << endl;
 
-    cout << " -  socket.." << endl;
+    if(LOG) cout << " -  socket.." << endl;
     int socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
     if(socket_udp < 0) return  socket_udp;
-    cout << " - socket succeeded." << endl;
+    if(LOG) cout << " - socket succeeded." << endl;
 
-    cout << " - connect.." << endl;
+    if(LOG) cout << " - connect.." << endl;
     int ret = connect(socket_udp, (struct sockaddr *)&socket_address, sizeof(socket_address));
     if(ret < 0) return ret;
-    cout << " - connect succeeded.." << endl;
+    if(LOG) cout << " - connect succeeded.." << endl;
 
-    cout << " - retrive address info.." << endl;
+    if(LOG) cout << " - retrive address info.." << endl;
     struct sockaddr_in client_address{};
     socklen_t len_client = sizeof(client_address);
     ret = getsockname(socket_udp, (struct sockaddr*)&client_address, &len_client);
@@ -740,8 +782,8 @@ int init_client_udp_connection(sockaddr_in socket_address) {
     }
 
     private_ip = client_address.sin_addr;
-    cout << " - local ip address: " << inet_ntoa(private_ip) << endl;
-    cout << " - address info ok." << endl;
+    if(LOG) cout << " - local ip address: " << inet_ntoa(private_ip) << endl;
+    if(LOG) cout << " - address info ok." << endl;
 
     cout << "Udp protocol configured." << endl;
     return socket_udp;

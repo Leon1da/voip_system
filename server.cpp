@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
     struct sockaddr_in server_address;
     bzero(&server_address, sizeof(server_address));
     server_address.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_address.sin_port = htons(SERVER_CHAT_PORT);
+    server_address.sin_port = htons(CS_PORT);
     server_address.sin_family = AF_INET;
 
     int server_socket = init_server_udp_connection(server_address);
