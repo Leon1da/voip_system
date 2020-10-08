@@ -333,6 +333,23 @@ void client_audio_accept() {
 
     connected_peer->set_peer_socket(peer_socket);
 
+    cout << "P2P Handshake." << endl;
+    int ret;
+    ret = sendto(connected_peer->get_peer_socket(), "HANDSHAKE CALLED", MSG_SIZE, 0, nullptr, 0);
+    if(ret < 0) {
+        perror("sendto");
+        exit(EXIT_FAILURE);
+    }
+
+    char buf[MSG_SIZE];
+    ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, nullptr, nullptr);
+    if(ret < 0){
+        perror("recvfrom");
+        exit(EXIT_FAILURE);
+    }
+    cout << buf << endl;
+
+    cout << "P2P Handshake end." << endl;
 
     thread called_thread(call_routine);
     called_thread.detach();
@@ -433,7 +450,29 @@ void recv_audio_accept(Message *msg) {
 
 
     string peer_name = msg->getSrc();
-    connected_peer->set_peer_address(addr);
+
+    cout << "P2P Handshake." << endl;
+
+    struct sockaddr_in address{};
+    socklen_t address_len = sizeof(struct sockaddr_in);
+
+    char buf[MSG_SIZE];
+    int ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+    if(ret < 0){
+        perror("recvfrom");
+        exit(EXIT_FAILURE);
+    }
+    cout << buf << endl;
+
+    ret = sendto(connected_peer->get_peer_socket(), "HANDSHAKE CALLER", MSG_SIZE, 0,  (struct sockaddr*) &address, (socklen_t) sizeof(address));
+    if(ret < 0) {
+        perror("sendto");
+        exit(EXIT_FAILURE);
+    }
+
+    cout << "P2P Handshake end." << endl;
+
+    connected_peer->set_peer_address(address);
 
     thread caller_thread(call_routine);
     caller_thread.detach();
