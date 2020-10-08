@@ -247,7 +247,6 @@ void handshake_routine_server(){
         perror("recvfrom");
         exit(EXIT_FAILURE);
     }
-    cout << buf << endl;
 
     print_socket_address(&remote_address);
 
@@ -291,9 +290,9 @@ void client_audio_request() {
 
     struct sockaddr_in peer_address{};
     bzero(&peer_address, sizeof(peer_address));
-    peer_address.sin_addr.s_addr = INADDR_ANY;
+    peer_address.sin_addr.s_addr = htonl(INADDR_ANY);
     // peer_address.sin_port = 0;  // p2p port 30020
-    peer_address.sin_port = P2P_PORT;  // p2p port 30020
+    peer_address.sin_port = htons(P2P_PORT);  // p2p port 30020
     peer_address.sin_family = AF_INET;
 
     int socket = init_server_udp_connection(peer_address);
@@ -307,7 +306,7 @@ void client_audio_request() {
      */
 
     // public ip, locale ip and p2p port number
-    string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(ntohs(P2P_PORT)); // ip publico e porta casuale
+    string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)); // ip publico e porta casuale
 
 
     /*
@@ -352,9 +351,9 @@ void client_audio_accept() {
 
     sockaddr_in remote_peer_addr;
     bzero(&remote_peer_addr, sizeof(remote_peer_addr));
-    if(connected_peer->public_ip == public_ip) inet_pton(AF_INET, connected_peer->local_ip.c_str(), &remote_peer_addr.sin_addr);
-    else inet_pton(AF_INET, connected_peer->public_ip.c_str(), &remote_peer_addr.sin_addr);
-    remote_peer_addr.sin_port = P2P_PORT;
+    if(connected_peer->public_ip == public_ip) remote_peer_addr.sin_addr.s_addr = inet_addr(connected_peer->local_ip.c_str());
+    else remote_peer_addr.sin_addr.s_addr = inet_addr(connected_peer->public_ip.c_str());
+    remote_peer_addr.sin_port = htons(P2P_PORT);
     remote_peer_addr.sin_family = AF_INET;
 
 
