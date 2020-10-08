@@ -10,7 +10,6 @@
 #include "client.h"
 #include "AudioManager.h"
 
-
 using namespace std;
 
 char public_ip[256];
@@ -234,6 +233,36 @@ int client_authentication() {
 
 }
 
+void handshake_routine_server(){
+
+    cout << "Handshake start" << endl;
+
+    int socket = connected_peer->get_peer_socket();
+
+    sockaddr_in remote_address;
+    socklen_t len_address = sizeof(struct sockaddr_in);
+    char buf[MSG_SIZE];
+    int ret = recvfrom(socket, buf, MSG_SIZE, 0, (struct sockaddr*) &remote_address, &len_address);
+    if(ret < 0){
+        perror("recvfrom");
+        exit(EXIT_FAILURE);
+    }
+    cout << buf << endl;
+
+    print_socket_address(&remote_address);
+
+    int len = sizeof(remote_address);
+    ret = sendto(socket, "HANDSHAKE SERVER", MSG_SIZE, 0, (struct sockaddr*) &remote_address, (socklen_t) len);
+    if(ret < 0){
+        perror("sendto");
+        exit(EXIT_FAILURE);
+    }
+
+    connected_peer->set_peer_address(remote_address);
+
+    cout << "Handshake end" << endl;
+}
+
 /*
  * Request audio with a peer
  */
@@ -260,30 +289,11 @@ void client_audio_request() {
         }
     }
 
-//    bool inLAN;
-//    // client select dst of call
-//    cout << "Do you want call a user in or out LAN? ( Type <in> or <out> )" << endl;
-//    string serviceType;
-//    while (running){
-//        int ret = available(0, 1, 0);
-//        if(ret < 0) {
-//            if(errno == EINTR) continue;
-//            //error
-//        } else if(ret == 0 ) {
-//            //timeout
-//            if(!running) return;
-//        } else{
-//            getline(cin,serviceType);
-//            break;
-//        }
-//    }
-//    if(serviceType == "in") inLAN = true;
-//    else inLAN = false;
-
     struct sockaddr_in peer_address{};
     bzero(&peer_address, sizeof(peer_address));
     peer_address.sin_addr.s_addr = INADDR_ANY;
-    peer_address.sin_port = P2P_PORT; // if in LAN call random port else PORT FORWARD
+    // peer_address.sin_port = 0;  // p2p port 30020
+    peer_address.sin_port = P2P_PORT;  // p2p port 30020
     peer_address.sin_family = AF_INET;
 
     int socket = init_server_udp_connection(peer_address);
@@ -292,6 +302,17 @@ void client_audio_request() {
         exit(EXIT_FAILURE);
     }
 
+    /*
+     * test
+     */
+
+    // public ip, locale ip and p2p port number
+    string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(ntohs(P2P_PORT)); // ip publico e porta casuale
+
+
+    /*
+     * end test
+     */
 
 //    struct sockaddr_in peertopeer_address{};
 //    socklen_t len_peer = sizeof(peertopeer_address);
@@ -301,11 +322,7 @@ void client_audio_request() {
 //        exit(EXIT_FAILURE);
 //    }
 
-    string address_info;
-    address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(P2P_PORT);
-
-//    if(inLAN) address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peertopeer_address.sin_port)); // public ip, private ip and random port
-//    else address_info = string(public_ip) + " " + string(inet_ntoa(private_ip)) + " " + to_string(P2P_PORT); // public ip, private ip and mapped port
+//    string address_info = string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peertopeer_address.sin_port)); // ip publico e porta casuale
 
     Message out(AUDIO, username, dst, address_info);
     cout << "send: " << out << endl;
@@ -318,6 +335,9 @@ void client_audio_request() {
 
     if(LOG) cout << "Client audio request sent." << endl;
 
+    thread handshake_t(handshake_routine_server);
+    handshake_t.detach();
+
 }
 
 /*
@@ -327,17 +347,16 @@ void client_audio_accept() {
 
     client_status = ACCEPT;
 
-//    sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
-//    remote_peer_addr.sin_family = AF_INET;
-    struct sockaddr_in remote_peer_addr;
+    //    sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
+    //    remote_peer_addr.sin_family = AF_INET;
+
+    sockaddr_in remote_peer_addr;
     bzero(&remote_peer_addr, sizeof(remote_peer_addr));
-    remote_peer_addr.sin_addr.s_addr = inet_addr(connected_peer->address.c_str());
-    remote_peer_addr.sin_port = htons(atoi(connected_peer->port.c_str())); // if in LAN call random port else PORT FORWARD
+    if(connected_peer->public_ip == public_ip) inet_pton(AF_INET, connected_peer->local_ip.c_str(), &remote_peer_addr.sin_addr);
+    else inet_pton(AF_INET, connected_peer->public_ip.c_str(), &remote_peer_addr.sin_addr);
+    remote_peer_addr.sin_port = P2P_PORT;
     remote_peer_addr.sin_family = AF_INET;
 
-    connected_peer->set_peer_address(remote_peer_addr);
-
-    print_socket_address(&remote_peer_addr);
 
     int peer_socket = init_client_udp_connection(remote_peer_addr);
     if(peer_socket < 0){
@@ -346,24 +365,41 @@ void client_audio_accept() {
     }
 
     // get sock info for client
-    struct sockaddr_in peer_addr{};
-    socklen_t len = sizeof(peer_addr);
-    int ret = getsockname(peer_socket, (struct sockaddr*)&peer_addr, &len);
+//    struct sockaddr_in peer_addr{};
+//    socklen_t len = sizeof(peer_addr);
+//    int ret = getsockname(peer_socket, (struct sockaddr*)&peer_addr, &len);
+//    if(ret < 0){
+//        perror("Error during getsockname operation");
+//        exit(EXIT_FAILURE);
+//    }
+//
+//    string address_info = string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peer_addr.sin_port));
+
+//    Message out(ACCEPT, username, connected_peer->get_peer_name(), "address_info");
+//    cout << "send: " << out << endl;
+//    manager->sendMessage(&out);
+    cout << "Handshake start." << endl;
+
+    int ret = sendto(peer_socket, "HANDSHAKE CLIENT", MSG_SIZE, 0, nullptr,  0);
     if(ret < 0){
-        perror("Error during getsockname operation");
+        perror("sendto");
         exit(EXIT_FAILURE);
     }
 
-    print_socket_address(&peer_addr);
+    char buf[MSG_SIZE];
+    ret = recvfrom(peer_socket, buf , MSG_SIZE, 0, nullptr, nullptr);
+    if(ret < 0){
+        perror("sendto");
+        exit(EXIT_FAILURE);
+    }
 
-    string address_info = string(public_ip) + " " + inet_ntoa(peer_addr.sin_addr) + " " + to_string(P2P_PORT);
-//    string address_info = string(inet_ntoa(private_ip)) + " " + to_string(ntohs(peer_addr.sin_port));
-//    string address_info = string(public_ip) + " " + to_string(P2P_PORT);
+    cout << "Handshake end." << endl;
 
-
-    Message out(ACCEPT, username, connected_peer->get_peer_name(), address_info);
+    Message out(ACCEPT, username, connected_peer->get_peer_name(), "");
     cout << "send: " << out << endl;
     manager->sendMessage(&out);
+
+    connected_peer->set_peer_address(remote_peer_addr);
 
     connected_peer->set_peer_socket(peer_socket);
 
@@ -426,27 +462,12 @@ void recv_audio_request(Message *msg) {
     const string& content = msg->getContent();
 //    string s_addr_string = content.substr(0, content.find(' '));
 //    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
+//    cout << "address info: " << s_addr_string << " " << sin_port_string << endl;
 
-    string public_address_string = content.substr(0, content.find(' '));
-    string private_address_string = content.substr(content.find(' ') + 1, content.find(' ', content.find(' ')) + 1);
-    string port_string = content.substr(content.find(' ', content.find(' ') + 1) + 1, content.size());
+    string public_ip_string = content.substr(0, content.find(' '));
+    string locale_ip_string = content.substr(content.find(' ') + 1, content.find(' ', content.find(' ')) + 1 );
 
-//    cout << "address info: " << public_address_string << " " << private_address_string << " " << port_string << endl;
-    cout << "public ip: " << public_address_string << endl;
-    cout << "private ip: " << private_address_string << endl;
-    cout << "port: " << port_string << endl;
-
-    bool inLAN;
-    if(public_address_string == public_ip) inLAN = true;
-    else inLAN = false;
-
-    if(inLAN) cout << "In LAN call." << endl;
-    else cout << "Out LAN call." << endl;
-
-    string s_addr_string;
-    if(inLAN)  s_addr_string = private_address_string;
-    else s_addr_string = public_address_string;
-    string sin_port_string = port_string;
+    cout << "public ip -" << public_ip_string << "- -" << locale_ip_string << "-" << endl;
 
 
 
@@ -456,15 +477,14 @@ void recv_audio_request(Message *msg) {
 //    remote_peer_address.sin_port = htons(atoi(sin_port_string.c_str()));
 //    remote_peer_address.sin_family = AF_INET;
 
-//    print_socket_address(&remote_peer_address);
 
     calling = true;
     connected_peer = new Peer();
     connected_peer->set_peer_name(msg->getSrc());
 //    connected_peer->set_peer_address(remote_peer_address);
-    connected_peer->address = s_addr_string;
-    connected_peer->port = sin_port_string;
 
+    connected_peer->public_ip = public_ip_string;
+    connected_peer->local_ip = locale_ip_string;
 
 }
 
@@ -475,41 +495,21 @@ void recv_audio_accept(Message *msg) {
 
     client_status = ACCEPT;
 
-    const string& content = msg->getContent();
+//    const string& content = msg->getContent();
 //    string s_addr_string = content.substr(0, content.find(' '));
 //    string sin_port_string = content.substr(content.find(' ') + 1, content.size());
-
-    string public_address_string = content.substr(0, content.find(' '));
-    string private_address_string = content.substr(content.find(' ') + 1, content.find(' ', content.find(' ')) + 1);
-    string port_string = content.substr(content.find(' ', content.find(' ') + 1) + 1, content.size());
-
-    cout << "public ip: " << public_address_string << endl;
-    cout << "private ip: " << private_address_string << endl;
-    cout << "port: " << port_string << endl;
-
-    bool inLAN;
-    if(private_address_string == public_ip) inLAN = true;
-    else inLAN = false;
-
+//
+//    cout << content << endl;
+//
 //    struct sockaddr_in addr{};
 //    bzero(&addr, sizeof(addr));
 //    addr.sin_addr.s_addr = inet_addr(s_addr_string.c_str());
 //    addr.sin_port = htons(atoi(sin_port_string.c_str()));
 //    addr.sin_family = AF_INET;
-
-
-    struct sockaddr_in addr{};
-    bzero(&addr, sizeof(addr));
-    addr.sin_family = AF_INET;
-    if(inLAN) addr.sin_addr.s_addr = inet_addr(private_address_string.c_str());
-    else addr.sin_addr.s_addr = inet_addr(public_address_string.c_str());
-    addr.sin_port = htons(atoi(port_string.c_str()));
-
-
-//  print_socket_address(&addr);
-
-    string peer_name = msg->getSrc();
-    connected_peer->set_peer_address(addr);
+//
+//
+//    string peer_name = msg->getSrc();
+//    connected_peer->set_peer_address(addr);
 
     thread caller_thread(call_routine);
     caller_thread.detach();
@@ -545,7 +545,7 @@ void sender_audio_routine(){
                 if(errno == ECONNREFUSED) break;
                 perror("sendto");
                 exit(EXIT_FAILURE);
-            } else if(ret != audioManagerOut.getSize()) cout << "short write: wrote %d bytes" << endl;
+            } else if(ret != audioManagerOut.getSize()) if(LOG) cout << "short write: wrote %d bytes" << endl;
         }
     }
 
@@ -565,7 +565,7 @@ void receiver_audio_routine(){
         char *buffer = audioManagerIn.getBuffer();
         int size = audioManagerIn.getSize();
         if(calling){
-            int ret = available(socket, 0, 50000);
+            int ret = available(socket, 1, 0);
             if(ret < 0){
                 perror("Error during select operation");
                 exit(EXIT_FAILURE);
@@ -665,45 +665,45 @@ void sender(){
         }
 
 
-//        if(line == "chat" ) client_chat();
-//        else if(line == "users" ) client_users();
-//        else if(line == "quit" ) client_quit();
-//        else if(line == "video" ) client_video();
-//        else if(line == "audio" ) client_audio_request();
-//        else if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
-//        else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
-//        else if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
-//        else cout << "Unknown status." << endl;
+        if(line == "chat" ) client_chat();
+        else if(line == "users" ) client_users();
+        else if(line == "quit" ) client_quit();
+        else if(line == "video" ) client_video();
+        else if(line == "audio" ) client_audio_request();
+        else if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
+        else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
+        else if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
+        else cout << "Unknown status." << endl;
 
 
 
-        if(!calling){
-            if(line == "chat" ) client_chat();
-            else if(line == "users" ) client_users();
-            else if(line == "quit" ) client_quit();
-            else if(line == "video" ) client_video();
-            else if(line == "audio" ) client_audio_request(); // client vuole chiamare un client
-            else{
-                cout << "Unknown command." << endl;
-                print_info_message();
-            }
-
-        }else{
-            if(client_status == AUDIO){
-                if(connected_peer->is_address_init()){
-                    if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
-                    else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
-                    else cout << "Incaming call.. <accept> or <refuse> ?" << endl;
-                } else{
-                    if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
-                    else cout << "Outgoing call.. <refuse> ?" << endl;
-                }
-            } else if(client_status == ACCEPT){
-                if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
-                else cout << "Calling in progress.. <ringoff> ?" << endl;
-            } else cout << "Unknown status." << endl;
-
-        }
+//        if(!calling){
+//            if(line == "chat" ) client_chat();
+//            else if(line == "users" ) client_users();
+//            else if(line == "quit" ) client_quit();
+//            else if(line == "video" ) client_video();
+//            else if(line == "audio" ) client_audio_request(); // client vuole chiamare un client
+//            else{
+//                cout << "Unknown command." << endl;
+//                print_info_message();
+//            }
+//
+//        }else{
+//            if(client_status == AUDIO){
+//                if(connected_peer->is_address_init()){
+//                    if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
+//                    else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
+//                    else cout << "Incaming call.. <accept> or <refuse> ?" << endl;
+//                } else{
+//                    if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
+//                    else cout << "Outgoing call.. <refuse> ?" << endl;
+//                }
+//            } else if(client_status == ACCEPT){
+//                if(line == "ringoff" ) client_audio_ringoff(); // client attacca mentre e` in chimata con un client
+//                else cout << "Calling in progress.. <ringoff> ?" << endl;
+//            } else cout << "Unknown status." << endl;
+//
+//        }
 
     }
 }
@@ -781,15 +781,15 @@ int init_server_udp_connection(sockaddr_in socket_address) {
     cout << "UDP protocol setupping..." << endl;
 
     int ret, socket_udp;
-    if(LOG) cout << " - socket.." << endl;
+    cout << " - socket.." << endl;
     socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
     if(socket_udp < 0) return socket_udp;
-    if(LOG) cout << " - socket succeeded." << endl;
+    cout << " - socket succeeded." << endl;
 
-    if(LOG) cout << " - bind.." << endl;
+    cout << " - bind.." << endl;
     ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
     if(ret < 0) return ret;
-    if(LOG) cout << " - bind succeeded." << endl;
+    cout << " - bind succeeded." << endl;
 
     cout << "Udp protocol configured." << endl;
 
@@ -800,17 +800,17 @@ int init_client_udp_connection(sockaddr_in socket_address) {
 
     cout << "UDP protocol setupping..." << endl;
 
-    if(LOG) cout << " -  socket.." << endl;
+    cout << " -  socket.." << endl;
     int socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
     if(socket_udp < 0) return  socket_udp;
-    if(LOG) cout << " - socket succeeded." << endl;
+    cout << " - socket succeeded." << endl;
 
-    if(LOG) cout << " - connect.." << endl;
+    cout << " - connect.." << endl;
     int ret = connect(socket_udp, (struct sockaddr *)&socket_address, sizeof(socket_address));
     if(ret < 0) return ret;
-    if(LOG) cout << " - connect succeeded.." << endl;
+    cout << " - connect succeeded.." << endl;
 
-    if(LOG) cout << " - retrive address info.." << endl;
+    cout << " - retrive address info.." << endl;
     struct sockaddr_in client_address{};
     socklen_t len_client = sizeof(client_address);
     ret = getsockname(socket_udp, (struct sockaddr*)&client_address, &len_client);
@@ -820,8 +820,8 @@ int init_client_udp_connection(sockaddr_in socket_address) {
     }
 
     private_ip = client_address.sin_addr;
-    if(LOG) cout << " - local ip address: " << inet_ntoa(private_ip) << endl;
-    if(LOG) cout << " - address info ok." << endl;
+    cout << " - local ip address: " << inet_ntoa(private_ip) << endl;
+    cout << " - address info ok." << endl;
 
     cout << "Udp protocol configured." << endl;
     return socket_udp;

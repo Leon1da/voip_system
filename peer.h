@@ -73,5 +73,7 @@ public:
 
     string address;
     string port;
+    string public_ip;
+    string local_ip;
 };
 
