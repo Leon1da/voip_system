@@ -2,8 +2,8 @@
 // Created by leonardo on 27/09/20.
 //
 
-#include "config.h"
-#include "MessageManager.h"
+#include "common.h"
+#include "ConnectionManager.h"
 
 
 Message::Message(CODE code, const string &src, const string &dst, const string &content) : code(code), src(src),
@@ -48,27 +48,27 @@ ostream &operator<<(ostream &os, const Message &message) {
 
 Message::Message() {}
 
-MessageManager::MessageManager(int socket) : socket(socket) {}
+ConnectionManager::ConnectionManager(int socket) : socket(socket) {}
 
-MessageManager::MessageManager(int socket, const sockaddr_in &address) : socket(socket), address(address) {}
+ConnectionManager::ConnectionManager(int socket, const sockaddr_in &address) : socket(socket), address(address) {}
 
-int MessageManager::getSocket() const {
+int ConnectionManager::getSocket() const {
     return socket;
 }
 
-void MessageManager::setSocket(int socket) {
-    MessageManager::socket = socket;
+void ConnectionManager::setSocket(int socket) {
+    ConnectionManager::socket = socket;
 }
 
-const sockaddr_in &MessageManager::getAddress() const {
+const sockaddr_in &ConnectionManager::getAddress() const {
     return address;
 }
 
-void MessageManager::setAddress(const sockaddr_in &address) {
-    MessageManager::address = address;
+void ConnectionManager::setAddress(const sockaddr_in &address) {
+    ConnectionManager::address = address;
 }
 
-int MessageManager::sendMessage(Message *message) {
+int ConnectionManager::sendMessage(Message *message) {
 
     char msg[MSG_SIZE];
     memset(msg, 0, MSG_SIZE);
@@ -82,7 +82,7 @@ int MessageManager::sendMessage(Message *message) {
 
 }
 
-int MessageManager::sendMessage(Message *p_message, sockaddr_in* p_adddress) {
+int ConnectionManager::sendMessage(Message *p_message, sockaddr_in* p_adddress) {
 
     char msg[MSG_SIZE];
     memset(msg, 0, MSG_SIZE);
@@ -95,9 +95,7 @@ int MessageManager::sendMessage(Message *p_message, sockaddr_in* p_adddress) {
     return ret;
 }
 
-
-
-int MessageManager::recvMessage(Message *message) {
+int ConnectionManager::recvMessage(Message *message) {
     
     char msg[MSG_SIZE];
 
@@ -121,7 +119,7 @@ int MessageManager::recvMessage(Message *message) {
     return ret;
 }
 
-int MessageManager::recvMessage(Message *message, sockaddr_in *src_address) {
+int ConnectionManager::recvMessage(Message *message, sockaddr_in *src_address) {
 
     char msg[MSG_SIZE];
     socklen_t len = sizeof(*src_address);
@@ -143,4 +141,6 @@ int MessageManager::recvMessage(Message *message, sockaddr_in *src_address) {
     return ret;
 
 }
+
+
 

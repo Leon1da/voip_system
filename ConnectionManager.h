@@ -2,8 +2,8 @@
 // Created by leonardo on 27/09/20.
 //
 
-#ifndef CHAT_UDP_MESSAGEMANAGER_H
-#define CHAT_UDP_MESSAGEMANAGER_H
+#ifndef CHAT_UDP_CONNECTIONMANAGER_H
+#define CHAT_UDP_CONNECTIONMANAGER_H
 
 
 #include <netinet/in.h>
@@ -84,16 +84,16 @@ public:
     void setContent(const string &content);
 };
 
-class MessageManager {
+class ConnectionManager {
 
 private:
     int socket;
     sockaddr_in address;
 
 public:
-    MessageManager(int socket, const sockaddr_in &address);
+    ConnectionManager(int socket, const sockaddr_in &address);
 
-    MessageManager(int socket);
+    ConnectionManager(int socket);
 
     int getSocket() const;
 
@@ -115,4 +115,4 @@ public:
 
 
 
-#endif //CHAT_UDP_MESSAGEMANAGER_H
+#endif //CHAT_UDP_CONNECTIONMANAGER_H

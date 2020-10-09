@@ -11,7 +11,7 @@ using namespace std;
 list<User> registered_users;
 list<User*> logged_users;
 
-MessageManager* manager;
+ConnectionManager* manager;
 
 bool running;
 
@@ -28,12 +28,9 @@ int main(int argc, char *argv[])
     server_address.sin_family = AF_INET;
 
     int server_socket = init_server_udp_connection(server_address);
-    if(server_socket < 0){
-        perror("Error during init_server_udp_connection");
-        exit(EXIT_FAILURE);
-    }
+    if(server_socket < 0) handle_error("init_server_udp_connection");
 
-    manager = new MessageManager(server_socket);
+    manager = new ConnectionManager(server_socket);
 
     cout << "Server ready." << endl;
     print_registered_users();
@@ -71,10 +68,12 @@ int main(int argc, char *argv[])
 
     }
 
-    close_udp_connection(0);
-    cout << "Server shutdown." << endl;
-
     for(User* u: logged_users) delete u;
+
+    ret = close_udp_connection(server_socket);
+    if(ret < 0) perror("close_udp_connection");
+
+    cout << "Server shutdown." << endl;
 
     return EXIT_SUCCESS;
 }
@@ -99,10 +98,7 @@ void recv_client_users(Message *msg) {
     if(LOG) cout << "send: " << *msg;
 
     int ret = manager->sendMessage(msg, &src->address);
-    if(ret < 0){
-        perror("Error during send users list operation");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_users - sendMessage");
 
 }
 
@@ -110,9 +106,10 @@ void recv_client_quit(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "Fatal error: src not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] src not found." << endl << "Unable to remove it." << endl;
+        return;
     }
+
 
     Message out(INFO, "Server", "", "User " + src->username + " left the chat.");
 
@@ -149,7 +146,7 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
             User* newUser = new User(0, username, password, *client_addr);
             logged_users.push_back(newUser);
 
-            cout << "User " << username << "has logged in." << endl;
+            cout << "User " << username << " has logged in." << endl;
 
         } else{
             // already logged
@@ -172,19 +169,19 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
     }
 
     int ret = manager->sendMessage(&out, client_addr);
-    if(ret < 0){
-        perror("Error during send message operation");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_authentication - sendMessage");
 
 }
 
 void recv_client_chat(Message *msg){
 
-    struct sockaddr_in* dst_addr;
-
     User *src = get_logged_user(msg->getSrc());
-    if(src == nullptr) cout << "Sender not logged in." << endl;
+    if(src == nullptr){
+        cout << "[ERROR] src not found." << endl;
+        return;
+    }
+
+    struct sockaddr_in* dst_addr;
 
     User *dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
@@ -203,10 +200,8 @@ void recv_client_chat(Message *msg){
     }
 
     int ret = manager->sendMessage(msg, dst_addr);
-    if(ret < 0){
-        perror("Error during recv_client_chat");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_chat - sendMessage");
+
 
 }
 
@@ -214,21 +209,18 @@ void recv_client_handshake_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "[ERROR] Src not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] src not found." << endl;
+        return;
     }
 
     User* dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
-        cout << "[ERROR] Dst not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] dst not found." << endl;
+        return;
     }
 
     int ret = manager->sendMessage(msg, &dst->address);
-    if(ret < 0){
-        perror("Error during recv_client_accept_audio");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_accept_audio - sendMessage");
 
 }
 
@@ -236,42 +228,37 @@ void recv_client_accept_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "[ERROR] Src not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] src not found." << endl;
+        return;
     }
 
     User* dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
-        cout << "[ERROR] Dst not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] dst not found." << endl;
+        return;
     }
 
     int ret = manager->sendMessage(msg, &dst->address);
-    if(ret < 0){
-        perror("Error during recv_client_accept_audio");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_accept_audio - sendMessage");
+
 }
 
 void recv_client_refuse_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "[ERROR] Src not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] src not found." << endl;
+        return;
     }
 
     User* dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
-        cout << "[ERROR] Dst not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] dst not found." << endl;
+        return;
     }
 
     int ret = manager->sendMessage(msg, &dst->address);
-    if(ret < 0){
-        perror("Error during recv_client_refuse_audio");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_refuse_audio - sendMessage");
 
 }
 
@@ -279,33 +266,30 @@ void recv_client_ringoff_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "[ERROR] Src not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "[ERROR] src not found." << endl;
+        return;
     }
 
     User* dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
         cout << "[ERROR] Dst not found." << endl;
-        exit(EXIT_FAILURE);
+        return;
     }
 
     int ret = manager->sendMessage(msg, &dst->address);
-    if(ret < 0){
-        perror("Error during recv_client_ringoff_audio");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_ringoff_audio - sendMessage");
 
 }
 
 void recv_client_request_audio(Message *msg) {
 
-    struct sockaddr_in* dst_addr;
-
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "Fatal error: src not found." << endl;
-        exit(EXIT_FAILURE);
+        cout << "src not found." << endl;
+        return;
     }
+
+    struct sockaddr_in* dst_addr;
 
     User *dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
@@ -333,15 +317,17 @@ void recv_client_request_audio(Message *msg) {
     }
 
     int ret = manager->sendMessage(msg, dst_addr);
-    if(ret < 0){
-        perror("Error during recv_client_request_audio");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) perror("recv_client_request_audio - sendMessage");
+
 
 }
 
 void send_broadcast_message(Message *msg){
-    for(User* u: logged_users) manager->sendMessage(msg, &u->address);
+    int ret;
+    for(User* u: logged_users){
+        ret = manager->sendMessage(msg, &u->address);
+        if(ret < 0) perror("send_broadcast_message - sendMessage");
+    }
 }
 
 // Initialization
@@ -350,39 +336,45 @@ void init_server() {
 
     if(LOG) cout << "Read Users from database." << endl;
     registered_users = read_users_from_file("users.txt");
+    if(LOG) cout << "Read Users from database ok." << endl;
 
     if(LOG) cout << "Signal handler init." << endl;
     signal_handler_init();
+    if(LOG) cout << "Signal handler init ok." << endl;
 }
 
 int init_server_udp_connection(sockaddr_in socket_address) {
 
-    cout << "UDP protocol setupping..." << endl;
+    if(LOG) cout << "UDP protocol setupping..." << endl;
 
     int ret, socket_udp;
-    cout << " - socket.." << endl;
+    if(LOG) cout << " - socket.." << endl;
     socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
-    if(socket_udp < 0) return socket_udp;
-    cout << " - socket succeeded." << endl;
+    if(socket_udp < 0){
+        perror("init_server_udp_connection - socket");
+        return socket_udp;
+    }
+    if(LOG) cout << " - socket succeeded." << endl;
 
-    cout << " - bind.." << endl;
+    if(LOG) cout << " - bind.." << endl;
     ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
-    if(ret < 0) return ret;
-    cout << " - bind succeeded." << endl;
+    if(ret < 0){
+        perror("init_server_udp_connection - bind");
+        return ret;
+    }
+    if(LOG) cout << " - bind succeeded." << endl;
 
-    cout << "Udp protocol configured." << endl;
+    if(LOG) cout << "Udp protocol configured." << endl;
 
     return socket_udp;
 }
 
-void close_udp_connection(int socket) {
+int close_udp_connection(int socket) {
 
     // close the descriptor
     int ret = close(socket);
-    if(ret < 0){
-        perror("Error during close operation");
-        exit(EXIT_FAILURE);
-    }
+    if(ret < 0) handle_error("close_udp_connection - close");
+    return ret;
 
 }
 
@@ -407,17 +399,6 @@ list<User> read_users_from_file(const string filename) {
 
 }
 
-void signal_handler_init() {
-    /* signal handler */
-    struct sigaction sigIntHandler;
-    sigIntHandler.sa_handler = sigintHandler;
-    sigemptyset(&sigIntHandler.sa_mask);
-    sigIntHandler.sa_flags = 0; //SA_RESTART
-    sigaction(SIGINT, &sigIntHandler, NULL);
-    /* end signal handler */
-
-}
-
 /* Signal Handler for SIGINT */
 void sigintHandler(int sig_num)
 {
@@ -427,7 +408,6 @@ void sigintHandler(int sig_num)
     running = false;
     delete manager;
 }
-
 
 // Utility
 
@@ -441,14 +421,14 @@ void print_registered_users() {
 }
 
 string get_logged_client_list() {
-    string logged_client_list = "";
+    string logged_client_list;
     for(User* &u: logged_users) logged_client_list.append(" - " + u->username);
     return logged_client_list;
 }
 
-User* get_logged_user(string username) {
+User* get_logged_user(const string& username) {
     for(User* &u : logged_users)
-        if(username.compare(u->username) == 0) return u;
+        if(username == u->username) return u;
     return nullptr;
 }
 
@@ -462,13 +442,13 @@ void print_logged_users() {
     }
 }
 
-bool isRegistered(string username, string password) {
-    for (User &u : registered_users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) return true;
+bool isRegistered(const string& username, const string& password) {
+    for (User &u : registered_users ) if(username == u.username && password == u.password) return true;
     return false;
 }
 
-bool isLogged(string username) {
-    for(User* u : logged_users) if(username.compare(u->username) == 0) return true;
+bool isLogged(const string& username) {
+    for(User* u : logged_users) if(username == u->username) return true;
     return false;
 }
 
@@ -477,9 +457,13 @@ void receiver() {
 
     struct sockaddr_in client_address{};
     Message in;
-    manager->recvMessage(&in, &client_address);
-    if(LOG) cout << "recv: " << in << endl;
+    int ret = manager->recvMessage(&in, &client_address);
+    if(ret < 0){
+        perror("receiver - recvMessage");
+        return;
+    }
 
+    if(LOG) cout << "recv: " << in << endl;
 
     switch (in.getCode()) {
         case AUTHENTICATION:

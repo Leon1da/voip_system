@@ -16,8 +16,8 @@
 #include <csignal>
 #include <thread>
 
-#include "config.h"
-#include "MessageManager.h"
+#include "common.h"
+#include "ConnectionManager.h"
 #include "peer.h"
 #include "user.h"
 
@@ -38,7 +38,7 @@ void recv_client_ringoff_audio(Message *msg);
 
 int init_server_udp_connection(sockaddr_in socket_address);
 
-void close_udp_connection(int socket);
+int close_udp_connection(int socket);
 
 void init_server();
 
@@ -75,11 +75,11 @@ string get_logged_client_list();
 void print_message(char *message);
 
 
-bool isLogged(string username);
+bool isLogged(const string& username);
 
-bool isRegistered(string username, string password);
+bool isRegistered(const string& username, const string& password);
 
 list<User> read_users_from_file(const string filename);
 
-User * get_logged_user(string username);
+User * get_logged_user(const string& username);
 

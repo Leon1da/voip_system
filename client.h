@@ -7,6 +7,8 @@
 
 #endif //CHAT_UDP_CLIENT_H
 
+#include "ipify.h"
+
 #include <iostream>
 #include <string>
 #include <cstdio>
@@ -18,13 +20,16 @@
 #include <cstring>
 #include <thread>
 #include <list>
-#include <csignal>
 #include <regex>
 
 #include <semaphore.h>
 
-#include "config.h"
-#include "MessageManager.h"
+#include <netdb.h>
+#include <ifaddrs.h>
+
+#include "common.h"
+#include "ConnectionManager.h"
+#include "AudioManager.h"
 #include "peer.h"
 #include "user.h"
 
@@ -36,7 +41,7 @@ int init_client_udp_connection(sockaddr_in socket_address);
 
 void udp_init();
 
-void close_udp_connection(int socket);
+int close_udp_connection(int socket);
 
 void signal_handler_init();
 

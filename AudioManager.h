@@ -8,7 +8,7 @@
 
 #include <alsa/asoundlib.h>
 #include <iostream>
-#include "config.h"
+#include "common.h"
 
 using namespace std;
 
