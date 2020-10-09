@@ -15,6 +15,7 @@ MessageManager* manager;
 
 bool running;
 
+
 int main(int argc, char *argv[])
 {
     cout << "Server setup." << endl;
@@ -95,7 +96,7 @@ void recv_client_users(Message *msg) {
     msg->setDst(src->username);
     msg->setContent(logged_client_list);
 
-    cout << "send: " << *msg;
+    if(LOG) cout << "send: " << *msg;
 
     int ret = manager->sendMessage(msg, &src->address);
     if(ret < 0){
@@ -177,7 +178,7 @@ void recv_client_chat(Message *msg){
     struct sockaddr_in* dst_addr;
 
     User *src = get_logged_user(msg->getSrc());
-    if(src == nullptr) cout << "Sender not logged in. FATAL ERROR" << endl;
+    if(src == nullptr) cout << "Sender not logged in." << endl;
 
     User *dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
@@ -203,66 +204,24 @@ void recv_client_chat(Message *msg){
 
 }
 
-bool isRegistered(string username, string password) {
-    for (User &u : registered_users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) return true;
-    return false;
-}
+void recv_client_handshake_audio(Message *msg) {
 
-bool isLogged(string username) {
-    for(User* u : logged_users) if(username.compare(u->username) == 0) return true;
-    return false;
-}
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "[ERROR] Src not found." << endl;
+        exit(EXIT_FAILURE);
+    }
 
-void receiver() {
+    User* dst = get_logged_user(msg->getDst());
+    if(dst == nullptr){
+        cout << "[ERROR] Dst not found." << endl;
+        exit(EXIT_FAILURE);
+    }
 
-
-    struct sockaddr_in client_address{};
-    Message in;
-    manager->recvMessage(&in, &client_address);
-    cout << "recv: " << in << endl;
-
-
-    switch (in.getCode()) {
-        case AUTHENTICATION:
-            if(LOG) cout << "Authentication message arrived." << endl;
-            recv_client_authentication(&client_address, &in);
-            break;
-        case CHAT:
-            if(LOG) cout << "Chat message arrived." << endl;
-            recv_client_chat(&in);
-            break;
-        case USERS:
-            if(LOG) cout << "Users message arrived." << endl;
-            recv_client_users(&in);
-            break;
-        case QUIT:
-            if(LOG) cout << "Quit message arrived." << endl;
-            recv_client_quit(&in);
-            break;
-        case AUDIO:
-            // client x vuole chiamare client y
-            if(LOG) cout << "Audio message arrived." << endl;
-            recv_client_request_audio(&in);
-            break;
-        case ACCEPT:
-            // client y ha accettato la chiamata del client x
-            if(LOG) cout << "Accept message arrived." << endl;
-            recv_client_accept_audio(&in);
-            break;
-        case REFUSE:
-            // client y ha rifiutato la chiamata del client y
-            if(LOG) cout << "Refuse message arrived." << endl;
-            recv_client_refuse_audio(&in);
-            break;
-        case RINGOFF:
-            // il client
-            if(LOG) cout << "Ringoff message arrived." << endl;
-            recv_client_ringoff_audio(&in);
-            break;
-
-        default:
-            if(LOG) cout << "Default message arrived." << endl;
-            break;
+    int ret = manager->sendMessage(msg, &dst->address);
+    if(ret < 0){
+        perror("Error during recv_client_accept_audio");
+        exit(EXIT_FAILURE);
     }
 
 }
@@ -271,13 +230,13 @@ void recv_client_accept_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "Fatal error: src not found." << endl;
+        cout << "[ERROR] Src not found." << endl;
         exit(EXIT_FAILURE);
     }
 
     User* dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
-        cout << "Fatal error: dst not found." << endl;
+        cout << "[ERROR] Dst not found." << endl;
         exit(EXIT_FAILURE);
     }
 
@@ -292,13 +251,13 @@ void recv_client_refuse_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "Fatal error: src not found." << endl;
+        cout << "[ERROR] Src not found." << endl;
         exit(EXIT_FAILURE);
     }
 
     User* dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
-        cout << "Fatal error: dst not found." << endl;
+        cout << "[ERROR] Dst not found." << endl;
         exit(EXIT_FAILURE);
     }
 
@@ -314,13 +273,13 @@ void recv_client_ringoff_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "Fatal error: src not found." << endl;
+        cout << "[ERROR] Src not found." << endl;
         exit(EXIT_FAILURE);
     }
 
     User* dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
-        cout << "Fatal error: dst not found." << endl;
+        cout << "[ERROR] Dst not found." << endl;
         exit(EXIT_FAILURE);
     }
 
@@ -332,9 +291,6 @@ void recv_client_ringoff_audio(Message *msg) {
 
 }
 
-/*
- * send from src to dst the request for call
- */
 void recv_client_request_audio(Message *msg) {
 
     struct sockaddr_in* dst_addr;
@@ -378,6 +334,10 @@ void recv_client_request_audio(Message *msg) {
 
 }
 
+void send_broadcast_message(Message *msg){
+    for(User* u: logged_users) manager->sendMessage(msg, &u->address);
+}
+
 // Initialization
 
 void init_server() {
@@ -387,27 +347,6 @@ void init_server() {
 
     if(LOG) cout << "Signal handler init." << endl;
     signal_handler_init();
-}
-
-list<User> read_users_from_file(const string filename) {
-
-    list<User> users_read;
-
-    std::ifstream in(filename);
-    if(!in.good()){
-        cout << "Error during read file: " << filename << endl;
-        return users_read;
-    }
-
-    while(!in.eof()){
-        User u;
-        in >> u;
-        users_read.push_back(u);
-    }
-    in.close();
-
-    return users_read;
-
 }
 
 int init_server_udp_connection(sockaddr_in socket_address) {
@@ -441,6 +380,27 @@ void close_udp_connection(int socket) {
 
 }
 
+list<User> read_users_from_file(const string filename) {
+
+    list<User> users_read;
+
+    std::ifstream in(filename);
+    if(!in.good()){
+        cout << "Error during read file: " << filename << endl;
+        return users_read;
+    }
+
+    while(!in.eof()){
+        User u;
+        in >> u;
+        users_read.push_back(u);
+    }
+    in.close();
+
+    return users_read;
+
+}
+
 void signal_handler_init() {
     /* signal handler */
     struct sigaction sigIntHandler;
@@ -450,10 +410,6 @@ void signal_handler_init() {
     sigaction(SIGINT, &sigIntHandler, NULL);
     /* end signal handler */
 
-}
-
-void send_broadcast_message(Message *msg){
-    for(User* u: logged_users) manager->sendMessage(msg, &u->address);
 }
 
 /* Signal Handler for SIGINT */
@@ -484,6 +440,12 @@ string get_logged_client_list() {
     return logged_client_list;
 }
 
+User* get_logged_user(string username) {
+    for(User* &u : logged_users)
+        if(username.compare(u->username) == 0) return u;
+    return nullptr;
+}
+
 void print_logged_users() {
     cout << "Logged users: " << endl;
     for(User* &u : logged_users){
@@ -494,8 +456,66 @@ void print_logged_users() {
     }
 }
 
-User* get_logged_user(string username) {
-    for(User* &u : logged_users)
-        if(username.compare(u->username) == 0) return u;
-    return nullptr;
+bool isRegistered(string username, string password) {
+    for (User &u : registered_users ) if(username.compare(u.username) == 0 && password.compare(u.password) == 0) return true;
+    return false;
+}
+
+bool isLogged(string username) {
+    for(User* u : logged_users) if(username.compare(u->username) == 0) return true;
+    return false;
+}
+
+void receiver() {
+
+
+    struct sockaddr_in client_address{};
+    Message in;
+    manager->recvMessage(&in, &client_address);
+    if(LOG) cout << "recv: " << in << endl;
+
+
+    switch (in.getCode()) {
+        case AUTHENTICATION:
+            if(LOG) cout << "Authentication message arrived." << endl;
+            recv_client_authentication(&client_address, &in);
+            break;
+        case CHAT:
+            if(LOG) cout << "Chat message arrived." << endl;
+            recv_client_chat(&in);
+            break;
+        case USERS:
+            if(LOG) cout << "Users message arrived." << endl;
+            recv_client_users(&in);
+            break;
+        case QUIT:
+            if(LOG) cout << "Quit message arrived." << endl;
+            recv_client_quit(&in);
+            break;
+        case AUDIO:
+            if(LOG) cout << "Audio message arrived." << endl;
+            recv_client_request_audio(&in);
+            break;
+        case ACCEPT:
+            if(LOG) cout << "Accept message arrived." << endl;
+            recv_client_accept_audio(&in);
+            break;
+        case REFUSE:
+            if(LOG) cout << "Refuse message arrived." << endl;
+            recv_client_refuse_audio(&in);
+            break;
+        case RINGOFF:
+            if(LOG) cout << "Ringoff message arrived." << endl;
+            recv_client_ringoff_audio(&in);
+            break;
+        case HANDSHAKE:
+            if(LOG) cout << "Handshake message arrived." << endl;
+            recv_client_handshake_audio(&in);
+            break;
+
+        default:
+            if(LOG) cout << "Default message arrived." << endl;
+            break;
+    }
+
 }

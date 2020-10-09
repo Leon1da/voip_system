@@ -32,6 +32,8 @@ void recv_client_refuse_audio(Message *msg);
 
 void recv_client_accept_audio(Message *msg);
 
+void recv_client_handshake_audio(Message *message);
+
 void recv_client_ringoff_audio(Message *msg);
 
 int init_server_udp_connection(sockaddr_in socket_address);

@@ -46,7 +46,8 @@ enum CODE{
     AUDIO = 1011,
     ACCEPT = 1012,
     REFUSE = 1013,
-    RINGOFF = 1015
+    RINGOFF = 1015,
+    HANDSHAKE = 1016
 };
 
 

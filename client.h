@@ -90,3 +90,9 @@ void recv_audio_ringoff();
 void recv_audio_refuse();
 
 void safe_peer_delete();
+
+int available(int fd, int sec, int usec);
+
+void print_socket_address(sockaddr_in *pIn);
+
+void recv_audio_handshake();
