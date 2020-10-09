@@ -149,12 +149,16 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
             User* newUser = new User(0, username, password, *client_addr);
             logged_users.push_back(newUser);
 
+            cout << "User " << username << "has logged in." << endl;
+
         } else{
             // already logged
             out.setCode(ERROR);
             out.setSrc("Server");
             out.setDst(username);
             out.setContent("Login failed. You are already logged in.");
+
+            if(LOG) cout << "Login failed." << endl;
 
         }
     } else{
@@ -163,6 +167,8 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
         out.setSrc("Server");
         out.setDst(username);
         out.setContent("Login failed. Wrong username or password.");
+
+        if(LOG) cout << "Login failed." << endl;
     }
 
     int ret = manager->sendMessage(&out, client_addr);
@@ -478,41 +484,48 @@ void receiver() {
     switch (in.getCode()) {
         case AUTHENTICATION:
             if(LOG) cout << "Authentication message arrived." << endl;
+            cout << "New user is trying to authenticate." << endl;
             recv_client_authentication(&client_address, &in);
             break;
         case CHAT:
             if(LOG) cout << "Chat message arrived." << endl;
+            cout << "User " << in.getSrc() << " wants to send a message to " << in.getDst() << "." << endl;
             recv_client_chat(&in);
             break;
         case USERS:
             if(LOG) cout << "Users message arrived." << endl;
+            cout << "User " << in.getSrc() << " requests users list." << endl;
             recv_client_users(&in);
             break;
         case QUIT:
             if(LOG) cout << "Quit message arrived." << endl;
+            cout << "User " << in.getSrc() << " wants to exit." << endl;
             recv_client_quit(&in);
             break;
         case AUDIO:
             if(LOG) cout << "Audio message arrived." << endl;
+            cout << "User " << in.getSrc() << " wants to call " << in.getDst() << "." << endl;
             recv_client_request_audio(&in);
             break;
         case ACCEPT:
             if(LOG) cout << "Accept message arrived." << endl;
+            cout << "User " << in.getSrc() << " accepted call from " << in.getDst() << "." << endl;
             recv_client_accept_audio(&in);
             break;
         case REFUSE:
             if(LOG) cout << "Refuse message arrived." << endl;
+            cout << "User " << in.getSrc() << " refused call." << endl;
             recv_client_refuse_audio(&in);
             break;
         case RINGOFF:
             if(LOG) cout << "Ringoff message arrived." << endl;
+            cout << "User " << in.getSrc() << " ring off." << endl;
             recv_client_ringoff_audio(&in);
             break;
         case HANDSHAKE:
             if(LOG) cout << "Handshake message arrived." << endl;
             recv_client_handshake_audio(&in);
             break;
-
         default:
             if(LOG) cout << "Default message arrived." << endl;
             break;

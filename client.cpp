@@ -61,13 +61,8 @@ int main(int argc, char *argv[])
 
     manager = new MessageManager(client_server_socket, server_address);
 
-    if (ipify(public_ip, sizeof(public_ip))) {
-        //errore (no ip address)
-        cout << "FATAL ERROR: no public ip address" << endl;
-    } else{
-        cout << "public ip address: " << public_ip << endl;
-    }
-
+    if (ipify(public_ip, sizeof(public_ip))) cout << "[ERROR] No IP address retrived." << endl;
+    else cout << "public ip address: " << public_ip << endl;
 
     // authentication
     int ret;
@@ -285,6 +280,8 @@ void client_audio_request() {
 
     if(LOG) cout << "Client audio request sent." << endl;
 
+    cout << " <refuse> " << endl;
+
 }
 
 /*
@@ -309,6 +306,8 @@ void client_audio_accept() {
     Message out(ACCEPT, username, connected_peer->get_peer_name(), address_info);
     if(LOG) cout << "send: " << out << endl;
     manager->sendMessage(&out);
+
+    cout << " <ringoff> " << endl;
 
 }
 
@@ -398,21 +397,36 @@ void recv_audio_accept(Message *msg) {
 
     cout << "P2P Handshake." << endl;
 
+    int ret, socket = connected_peer->get_peer_socket();
     struct sockaddr_in address{};
     socklen_t address_len = sizeof(struct sockaddr_in);
 
     char buf[MSG_SIZE];
-    int ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
-    if(ret < 0){
-        perror("recvfrom");
-        exit(EXIT_FAILURE);
-    }
-    if(LOG) cout << buf << endl;
+    while (calling){
+        ret = available(socket, 1, 0);
+        if(ret < 0){
+            perror("handshake select");
+            exit(EXIT_FAILURE);
+        } else if(ret == 0){
+            // timeout occurred
+            if(!calling) return;
+        } else{
 
-    ret = sendto(connected_peer->get_peer_socket(), "HANDSHAKE CALLER", MSG_SIZE, 0,  (struct sockaddr*) &address, (socklen_t) sizeof(address));
-    if(ret < 0) {
-        perror("sendto");
-        exit(EXIT_FAILURE);
+            int ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+            if(ret < 0){
+                perror("recvfrom");
+                exit(EXIT_FAILURE);
+            }
+            if(LOG) cout << buf << endl;
+            break;
+        }
+    }
+    if(calling){
+        ret = sendto(connected_peer->get_peer_socket(), "HANDSHAKE CALLER", MSG_SIZE, 0,  (struct sockaddr*) &address, (socklen_t) sizeof(address));
+        if(ret < 0) {
+            perror("sendto");
+            exit(EXIT_FAILURE);
+        }
     }
 
     cout << "P2P Handshake end." << endl;
@@ -428,20 +442,39 @@ void recv_audio_accept(Message *msg) {
 void recv_audio_handshake() {
 
     cout << "P2P Handshake." << endl;
-    int ret;
-    ret = sendto(connected_peer->get_peer_socket(), "HANDSHAKE CALLED", MSG_SIZE, 0, nullptr, 0);
-    if(ret < 0) {
-        perror("sendto");
-        exit(EXIT_FAILURE);
+
+    int ret, socket = connected_peer->get_peer_socket();
+
+    if(calling){
+        ret = sendto(socket, "HANDSHAKE CALLED", MSG_SIZE, 0, nullptr, 0);
+        if(ret < 0) {
+            perror("sendto");
+            exit(EXIT_FAILURE);
+        }
     }
 
     char buf[MSG_SIZE];
-    ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, nullptr, nullptr);
-    if(ret < 0){
-        perror("recvfrom");
-        exit(EXIT_FAILURE);
+    while (calling){
+        ret = available(socket, 1, 0);
+        if(ret < 0){
+            perror("handshake select");
+            exit(EXIT_FAILURE);
+        } else if(ret == 0){
+            // timeout occurred
+            if(!calling) return;
+        } else{
+
+            ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, nullptr, nullptr);
+            if(ret < 0){
+                perror("recvfrom");
+                exit(EXIT_FAILURE);
+            }
+            if(LOG) cout << buf << endl;
+            break;
+
+        }
+
     }
-    if(LOG) cout << buf << endl;
 
     cout << "P2P Handshake end." << endl;
 
@@ -571,10 +604,8 @@ void safe_peer_delete() {
     if(connected_peer != nullptr){
         if(connected_peer->is_socket_init())
             close_udp_connection(connected_peer->get_peer_socket());
-
         delete connected_peer;
         connected_peer = nullptr;
-
     }
 
 }
@@ -626,7 +657,7 @@ void sender(){
                 if(connected_peer->is_address_init()){
                     if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
                     else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
-                    else cout << "Incaming call.. <accept> or <refuse> ?" << endl;
+                    else cout << "Incoming call.. <accept> or <refuse> ?" << endl;
                 } else{
                     if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
                     else cout << "Outgoing call.. <refuse> ?" << endl;
@@ -670,7 +701,7 @@ void receiver() {
         case AUDIO:
             // il server mi comunica che un client mi sta chiamando
             if(LOG) cout << "Receive audio request." << endl;
-            cout << "Incoming call from " << in.getSrc() << "." << endl << "Type <accept> or <refuse>.";
+            cout << "Incoming call from " << in.getSrc() << ".\n <accept> <refuse> " << endl;
             recv_audio_request(&in);
             break;
         case ACCEPT:
