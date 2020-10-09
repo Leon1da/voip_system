@@ -838,6 +838,19 @@ void sigintHandler(int sig_num)
 
 }
 
+void signal_handler_init() {
+    /* signal handler */
+    struct sigaction sigIntHandler{};
+    sigIntHandler.sa_handler = sigintHandler;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0; //SA_RESTART
+    sigaction(SIGINT, &sigIntHandler, nullptr);
+    /* end signal handler */
+
+}
+
+
+
 /*
  * Wrapper for select operation
  * allow not blocking operation

@@ -43,8 +43,6 @@ void udp_init();
 
 int close_udp_connection(int socket);
 
-void signal_handler_init();
-
 // Comunication
 
 void sender();
