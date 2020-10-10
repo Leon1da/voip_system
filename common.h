@@ -7,12 +7,10 @@
 
 #endif //CHAT_UDP_CONFIG_H
 
-
-#include <csignal>
-
 #define XIAOMI_ADDRESS "192.168.1.69"
 #define TOSHIBA_ADDRESS "192.168.1.25"
 #define LOCALHOST_ADDRESS "127.0.0.1"
+#define MY_PUBLIC_IP "82.63.78.44"
 
 #define CS_PORT 30000
 #define P2P_PORT 30020
@@ -30,7 +28,7 @@ void sigintHandler(int sig_num);
 void signal_handler_init();
 
 
-#define LOG 0
+#define LOG 1
 
 
 

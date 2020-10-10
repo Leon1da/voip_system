@@ -22,6 +22,8 @@
 #include <list>
 #include <regex>
 
+#include <csignal>
+
 #include <semaphore.h>
 
 #include <netdb.h>

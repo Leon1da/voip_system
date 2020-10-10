@@ -30,7 +30,13 @@ Peer* connected_peer;
 
 int main(int argc, char *argv[])
 {
-    cout << "Client start." << endl;
+    string server_ip_address;
+    if(argc < 2) server_ip_address = "127.0.0.1";
+    else server_ip_address = argv[1];
+
+    cout << "Client start. " << endl;
+    cout << "Server address: " << server_ip_address << endl;
+    cout << "Run as: ./client <server_ip> to set a different ip address." << endl;
 
     if(LOG) cout << "Signal handler setup.." << endl;
     signal_handler_init();
@@ -41,9 +47,7 @@ int main(int argc, char *argv[])
 
     struct sockaddr_in server_address{};
     bzero(&server_address, sizeof(server_address));
-
-
-    server_address.sin_addr.s_addr = inet_addr(XIAOMI_ADDRESS);
+    server_address.sin_addr.s_addr = inet_addr(server_ip_address.c_str());
     server_address.sin_port = htons(CS_PORT);
     server_address.sin_family = AF_INET;
 
@@ -420,9 +424,11 @@ void recv_audio_accept(Message *msg) {
     while (calling){
         ret = available(socket, 1, 0);
         if(ret < 0){
-            perror("recv_audio_accept");
+            perror("recv_audio_accept - select");
+            return;
         } else if(ret == 0){
             // timeout occurred
+            if(LOG) cout << "recv_audio_handshake Timeout occurred." << endl;
             if(!calling) return;
         } else{
 
@@ -463,8 +469,10 @@ void recv_audio_handshake() {
         ret = available(socket, 1, 0);
         if(ret < 0){
             perror("recv_audio_handshake - select");
+            return;
         } else if(ret == 0){
             // timeout occurred
+            if(LOG) cout << "recv_audio_handshake Timeout occurred." << endl;
             if(!calling) return;
         } else{
 
