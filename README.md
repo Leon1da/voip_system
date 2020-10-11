@@ -5,59 +5,49 @@ Un utente gia' registrato puo' accede al servizio con le sue credenziali (userna
 
 Una volta effettuato l'accesso, l'utente puo scegliere tra diverse opzioni che il servizio mette a disposizione:
 - users, mostra gli utenti online 
-- chat, apre una chat con un utente che e` online
+- chat, apre una chat con un utente online
+- call, effettua una chiamata ad un utente online (*)
 - exit, esce dalla chat 
-- video, a breve verra` implementato un servizio di videochat
 
-Scegliendo "chat", l'utente avra la possibilita' di scegliere un utente a cui inviare messaggi, se l'utente risulta online lo scambio di messaggi avra' inizio.
-In qualunque momento l'utente puo inviare "return" per tornare al menu principale.
+**(*) per quanto riguarda la comunicazione vocale, viene effettuata una connessione "P2P" tra host e host. Per il suo corretto funzionamento e' necessario che venga configurato un port forwarding sulla porta 30020 (piu` host della stessa nella stessa LAN non possono effettuare comunicazioni vocali verso l'esterno contemporaneamente, o per meglio dire non potranno essere contattati dall'esterno).
+Se l'applicativo viene utilizzato in LAN non e' necessario il port forwarding.**
 
-- HOW
+Digitando "chat", l'utente avra la possibilita' di digitare l'username dell'utente a cui vuole inviare il messaggio, e il contenuto del messaggio stesso.
+A questo punto se l'utente risulta online il messaggio verra` inviato.
+
+Digitando "users", l'utente richiedera' al server una lista con gli utenti attualmente connessi.
+
+Digitando "call",  l'utente avra la possibilita' di digitare l'username dell'utente che vuole contattare.
+Se l'utente e' online e accetta la chiamata avra' inizio la comunicazione.
+
+Digitando "quit", l'utente abbandonera`il servizio. 
+
+**HOW**
 - Client 
 Il client e' sviluppato in modo tale da permettere all'utente di inviare/ricevere messaggi contemporaneamente.
-Una volta effettuato il setup della connessione al server, vengono creati due thread, ripettivamente "sender" e "receiver" che gestiscono, uno l'acquisizione dei messaggi da terminale e il loro invio e l'altro la ricezione e stampa a video degli stessi.
+Una volta effettuato il setup della connessione al server, viene creato un thread (sender) che si occupa dell'acquisizione dei comandi inseriti dalla shell.
+Il processo invece restera' in ascolto dei messaggi in arrivo dal server.
 Una volta inviato il comando "exit" il client uscira` rilasciando la memoria allocata.
 
 - Server 
-il server si occupa di inoltrare i messaggi tra i vari client online.
-Crea un thread per ogni connessione in ingresso su cui gestisce la stessa.
-Una volta autenticato l'utente, invia al client un messaggio di benvenuto con le opzioni disponibili.
-Quando arriva una richiesta di chat (open_chat), verifica che l'utente destinatario sia online, dopo di che parte la sessione di chat verso l'utente desiderato (start_comunication).
-Il server puo' essere interrotto in qualunque momento inviando "shutdown" da terminale, in tal caso si spegnera' quando non ci saranno' piu' utenti online.
+Il server si occupa di:
+	- autenticare i client che si connettono
+	- indirizzare i messaggi che gli arrivano dai clients ai clients a cui sono destinati.
+
+Autenticazione
+Il server verifica le credenziali che gli sono arrivate dal client connesso e le confronta con quelle nel database, se le       credenziali sono corrette invia un messaggio di successo al client, altrimenti gli invia un messaggio di errore.
+
+Routing
+Il server riceve il messaggio legge mittente e destinatario, controlla che il destinatario sia online, in caso positivo gli spedisce il messaggio in caso negativo comunica al client mittente che c'e` un errore
+	
+Il server puo essere interrotto in qualsiasi momento inviando il segnale SIGINT.
+Quando cio` accade invia un messaggio di uscita a tutti i client connessi.
 
 
-- HOW TO RUN
-1. in utils.h definire SERVER_ADDRESS e SERVER_PORT
-
-da terminale lanciare in ordine:
+**HOW TO RUN**
+- cmake .
 - make
 - ./server
-- ./client (almeno 2)
+- ./client <server_address>     (*)
 
-Effettuare il login (utenti registrati):
-
-- (username password)
-- leonardo leonardo
-- francesco francesco
-- nino nino
-- matteo matteo 
-- maria maria
-- paolo paolo
-
-Aprire una chat:
-- inviare "chat" dal menu principale.
-- inviare l'username dell'utente con cui si desidera chattare. (inviando "users" e` possibile vedere gli utenti online)
-
-
-Chiudere una chat:
-- inviare "return" da una chat aperta
-
-Disconnettersi dal server:
-- inviare "exit" dal menu principale
-
-
-Spengere il server: 
-- inviare "shutdown"
-
-
-
+(*) per lanciare il client, il campo <server_address> e' facoltativo, l'indirizzo di default e` quello locale.
