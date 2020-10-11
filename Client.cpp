@@ -31,7 +31,7 @@ Peer* connected_peer;
 int main(int argc, char *argv[])
 {
     string server_ip_address;
-    if(argc < 2) server_ip_address = "127.0.0.1";
+    if(argc < 2) server_ip_address = SERVER_ADDRESS;
     else server_ip_address = argv[1];
 
     cout << "Client start. " << endl;
@@ -644,7 +644,7 @@ void sender(){
             else if(line == "users" ) client_users();
             else if(line == "quit" ) client_quit();
             else if(line == "video" ) client_video();
-            else if(line == "audio" ) client_audio_request(); // client vuole chiamare un client
+            else if(line == "call" ) client_audio_request(); // client vuole chiamare un client
             else{
                 cout << "Unknown command." << endl;
                 print_info_message();
@@ -891,8 +891,8 @@ void safe_peer_delete() {
 
 void print_info_message() {
     cout << "Type <users> to see users online. " << endl
-         << "Type <chat> to send message. " << endl
-         << "Type <audio> to call. " << endl
+         << "Type <chat> to send a message. " << endl
+         << "Type <call> to start a call. " << endl
          << "Type <quit> to disconnect." << endl;
 }
 

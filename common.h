@@ -7,6 +7,8 @@
 
 #endif //CHAT_UDP_CONFIG_H
 
+#define SERVER_ADDRESS "127.0.0.1"
+
 #define XIAOMI_ADDRESS "192.168.1.69"
 #define TOSHIBA_ADDRESS "192.168.1.25"
 #define LOCALHOST_ADDRESS "127.0.0.1"
@@ -28,7 +30,7 @@ void sigintHandler(int sig_num);
 void signal_handler_init();
 
 
-#define LOG 1
+#define LOG 0
 
 
 
