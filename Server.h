@@ -17,10 +17,9 @@
 #include <thread>
 
 
-#include "common.h"
+#include "Common.h"
 #include "ConnectionManager.h"
-#include "peer.h"
-#include "user.h"
+#include "User.h"
 
 #ifndef CHAT_UDP_SERVER_H
 #define CHAT_UDP_SERVER_H

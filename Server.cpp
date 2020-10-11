@@ -3,7 +3,7 @@
 //
 
 
-#include "server.h"
+#include "Server.h"
 
 using namespace std;
 
@@ -11,7 +11,8 @@ using namespace std;
 list<User> registered_users;
 list<User*> logged_users;
 
-ConnectionManager* manager;
+//ConnectionManager* manager;
+ConnectionManager connectionManager;
 
 bool running;
 
@@ -27,51 +28,75 @@ int main(int argc, char *argv[])
     server_address.sin_port = htons(CS_PORT);
     server_address.sin_family = AF_INET;
 
-    int server_socket = init_server_udp_connection(server_address);
-    if(server_socket < 0) handle_error("init_server_udp_connection");
+    int ret = connectionManager.initServerConnection(server_address);
+    if(ret < 0) handle_error("initServerConnection");
 
-    manager = new ConnectionManager(server_socket);
+//    int server_socket = init_server_udp_connection(server_address);
+//    if(server_socket < 0) handle_error("init_server_udp_connection");
+//
+//    manager = new ConnectionManager(server_socket);
 
     cout << "Server ready." << endl;
     print_registered_users();
 
-
-    fd_set set;
-    FD_ZERO(&set); // clear set
-    FD_SET(server_socket, &set); // add server descriptor on set
-    // set timeout
-    timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
-
-    int ret;
-
     running = true;
-    while(running){
-
-        ret = select(MAX_CONN_QUEUE + 1, &set, nullptr, nullptr, &timeout);
+    while (running){
+        int ret = connectionManager.available(60, 0);
         if(ret < 0){
             if(errno == EINTR) continue;
-            perror("Error during server select operation: ");
+            perror("available");
             exit(EXIT_FAILURE);
-        }
-        else if(ret == 0) {
-             // timeout occurred
-            timeout.tv_sec = 5;
-            FD_ZERO(&set); // clear set
-            FD_SET(server_socket, &set); // add server descriptor on set
-            if(!running) cout << "[Info] Timeout occurred, closing server." << endl;
-        }else {
-            // Available data
+        } else if(ret == 0){
+            if(LOG) cout << "Timeout occurred." << endl;
+            if(!running) break;
+        } else{
             receiver();
         }
-
     }
+
+
+//    fd_set set;
+//    FD_ZERO(&set); // clear set
+//    FD_SET(server_socket, &set); // add server descriptor on set
+//    // set timeout
+//    timeval timeout;
+//    timeout.tv_sec = 5;
+//    timeout.tv_usec = 0;
+//
+//    int ret;
+//
+//    running = true;
+//    while(running){
+//
+//        ret = select(MAX_CONN_QUEUE + 1, &set, nullptr, nullptr, &timeout);
+//        if(ret < 0){
+//            if(errno == EINTR) continue;
+//            perror("Error during server select operation: ");
+//            exit(EXIT_FAILURE);
+//        }
+//        else if(ret == 0) {
+//             // timeout occurred
+//            timeout.tv_sec = 5;
+//            FD_ZERO(&set); // clear set
+//            FD_SET(server_socket, &set); // add server descriptor on set
+//            if(!running) cout << "[Info] Timeout occurred, closing server." << endl;
+//        }else {
+//            // Available data
+//            receiver();
+//        }
+//
+//    }
 
     for(User* u: logged_users) delete u;
 
-    ret = close_udp_connection(server_socket);
-    if(ret < 0) perror("close_udp_connection");
+//    ret = close_udp_connection(server_socket);
+//    if(ret < 0) perror("close_udp_connection");
+
+    if(LOG) cout << "closing connection.." << endl;
+    ret = connectionManager.closeConnection();
+    if(ret < 0) perror("closeConnection");
+    if(LOG) cout << "connection closed." << endl;
+
 
     cout << "Server shutdown." << endl;
 
@@ -81,6 +106,7 @@ int main(int argc, char *argv[])
 // Functionality
 
 void recv_client_users(Message *msg) {
+    int ret;
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
@@ -97,7 +123,8 @@ void recv_client_users(Message *msg) {
 
     if(LOG) cout << "send: " << *msg;
 
-    int ret = manager->sendMessage(msg, &src->address);
+    // int ret = manager->sendMessage(msg, &src->address);
+    ret = connectionManager.sendMessage(msg, &src->address);
     if(ret < 0) perror("recv_client_users - sendMessage");
 
 }
@@ -125,6 +152,7 @@ void recv_client_quit(Message *msg) {
 
 void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
 
+    int ret;
     Message out;
 
     string content = msg->getContent();
@@ -168,13 +196,14 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
         if(LOG) cout << "Login failed." << endl;
     }
 
-    int ret = manager->sendMessage(&out, client_addr);
+    // int ret = manager->sendMessage(&out, client_addr);
+    ret = connectionManager.sendMessage(&out, client_addr);
     if(ret < 0) perror("recv_client_authentication - sendMessage");
 
 }
 
 void recv_client_chat(Message *msg){
-
+    int ret;
     User *src = get_logged_user(msg->getSrc());
     if(src == nullptr){
         cout << "[ERROR] src not found." << endl;
@@ -199,7 +228,8 @@ void recv_client_chat(Message *msg){
         dst_addr = &dst->address;
     }
 
-    int ret = manager->sendMessage(msg, dst_addr);
+    //int ret = manager->sendMessage(msg, dst_addr);
+    ret = connectionManager.sendMessage(msg, dst_addr);
     if(ret < 0) perror("recv_client_chat - sendMessage");
 
 
@@ -219,7 +249,8 @@ void recv_client_handshake_audio(Message *msg) {
         return;
     }
 
-    int ret = manager->sendMessage(msg, &dst->address);
+    // int ret = manager->sendMessage(msg, &dst->address);
+    int ret = connectionManager.sendMessage(msg, &dst->address);
     if(ret < 0) perror("recv_client_accept_audio - sendMessage");
 
 }
@@ -238,7 +269,9 @@ void recv_client_accept_audio(Message *msg) {
         return;
     }
 
-    int ret = manager->sendMessage(msg, &dst->address);
+    // int ret = manager->sendMessage(msg, &dst->address);
+
+    int ret = connectionManager.sendMessage(msg, &dst->address);
     if(ret < 0) perror("recv_client_accept_audio - sendMessage");
 
 }
@@ -257,7 +290,8 @@ void recv_client_refuse_audio(Message *msg) {
         return;
     }
 
-    int ret = manager->sendMessage(msg, &dst->address);
+    // int ret = manager->sendMessage(msg, &dst->address);
+    int ret = connectionManager.sendMessage(msg, &dst->address);
     if(ret < 0) perror("recv_client_refuse_audio - sendMessage");
 
 }
@@ -276,7 +310,8 @@ void recv_client_ringoff_audio(Message *msg) {
         return;
     }
 
-    int ret = manager->sendMessage(msg, &dst->address);
+    // int ret = manager->sendMessage(msg, &dst->address);
+    int ret = connectionManager.sendMessage(msg, &dst->address);
     if(ret < 0) perror("recv_client_ringoff_audio - sendMessage");
 
 }
@@ -316,7 +351,8 @@ void recv_client_request_audio(Message *msg) {
         }
     }
 
-    int ret = manager->sendMessage(msg, dst_addr);
+//    int ret = manager->sendMessage(msg, dst_addr);
+    int ret = connectionManager.sendMessage(msg, &dst->address);
     if(ret < 0) perror("recv_client_request_audio - sendMessage");
 
 
@@ -325,7 +361,9 @@ void recv_client_request_audio(Message *msg) {
 void send_broadcast_message(Message *msg){
     int ret;
     for(User* u: logged_users){
-        ret = manager->sendMessage(msg, &u->address);
+
+        ret = connectionManager.sendMessage(msg, &u->address);
+        //ret = manager->sendMessage(msg, &u->address);
         if(ret < 0) perror("send_broadcast_message - sendMessage");
     }
 }
@@ -343,40 +381,40 @@ void init_server() {
     if(LOG) cout << "Signal handler init ok." << endl;
 }
 
-int init_server_udp_connection(sockaddr_in socket_address) {
-
-    if(LOG) cout << "UDP protocol setupping..." << endl;
-
-    int ret, socket_udp;
-    if(LOG) cout << " - socket.." << endl;
-    socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
-    if(socket_udp < 0){
-        perror("init_server_udp_connection - socket");
-        return socket_udp;
-    }
-    if(LOG) cout << " - socket succeeded." << endl;
-
-    if(LOG) cout << " - bind.." << endl;
-    ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
-    if(ret < 0){
-        perror("init_server_udp_connection - bind");
-        return ret;
-    }
-    if(LOG) cout << " - bind succeeded." << endl;
-
-    if(LOG) cout << "Udp protocol configured." << endl;
-
-    return socket_udp;
-}
-
-int close_udp_connection(int socket) {
-
-    // close the descriptor
-    int ret = close(socket);
-    if(ret < 0) handle_error("close_udp_connection - close");
-    return ret;
-
-}
+//int init_server_udp_connection(sockaddr_in socket_address) {
+//
+//    if(LOG) cout << "UDP protocol setupping..." << endl;
+//
+//    int ret, socket_udp;
+//    if(LOG) cout << " - socket.." << endl;
+//    socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
+//    if(socket_udp < 0){
+//        perror("init_server_udp_connection - socket");
+//        return socket_udp;
+//    }
+//    if(LOG) cout << " - socket succeeded." << endl;
+//
+//    if(LOG) cout << " - bind.." << endl;
+//    ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
+//    if(ret < 0){
+//        perror("init_server_udp_connection - bind");
+//        return ret;
+//    }
+//    if(LOG) cout << " - bind succeeded." << endl;
+//
+//    if(LOG) cout << "Udp protocol configured." << endl;
+//
+//    return socket_udp;
+//}
+//
+//int close_udp_connection(int socket) {
+//
+//    // close the descriptor
+//    int ret = close(socket);
+//    if(ret < 0) handle_error("close_udp_connection - close");
+//    return ret;
+//
+//}
 
 list<User> read_users_from_file(const string filename) {
 
@@ -406,20 +444,8 @@ void sigintHandler(int sig_num)
     send_broadcast_message(&out);
 
     running = false;
-    delete manager;
+    //delete manager;
 }
-
-void signal_handler_init() {
-    /* signal handler */
-    struct sigaction sigIntHandler{};
-    sigIntHandler.sa_handler = sigintHandler;
-    sigemptyset(&sigIntHandler.sa_mask);
-    sigIntHandler.sa_flags = 0; //SA_RESTART
-    sigaction(SIGINT, &sigIntHandler, nullptr);
-    /* end signal handler */
-
-}
-
 
 
 // Utility
@@ -470,7 +496,8 @@ void receiver() {
 
     struct sockaddr_in client_address{};
     Message in;
-    int ret = manager->recvMessage(&in, &client_address);
+    // int ret = manager->recvMessage(&in, &client_address);
+    int ret = connectionManager.recvMessage(&in, &client_address);
     if(ret < 0){
         perror("receiver - recvMessage");
         return;

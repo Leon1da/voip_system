@@ -11,10 +11,10 @@ set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 # client
-add_executable(client Client.cpp common.h client.h ConnectionManager.cpp ConnectionManager.h AudioManager.cpp AudioManager.h ipify.cpp ipify.h user.h peer.h)
+add_executable(client Client.cpp Client.h ConnectionManager.cpp ConnectionManager.h AudioManager.cpp AudioManager.h ipify.cpp ipify.h User.h Common.cpp Common.h)
 
 # server
-add_executable(server Server.cpp common.h server.h ConnectionManager.cpp ConnectionManager.h user.h)
+add_executable(server Server.cpp Server.h ConnectionManager.cpp ConnectionManager.h User.h Common.cpp Common.h)
 
 
 find_package(ALSA REQUIRED)

@@ -3,7 +3,7 @@
 //
 
 
-#include "client.h"
+#include "Client.h"
 
 
 using namespace std;
@@ -15,7 +15,9 @@ in_addr private_ip;
 AudioManager audioManagerIn;
 AudioManager audioManagerOut;
 
-ConnectionManager* manager;
+ConnectionManager connectionManager;
+
+//ConnectionManager* manager;
 thread* send_thread;
 
 string username;
@@ -23,8 +25,10 @@ string username;
 CODE client_status;
 bool running;
 
-int calling;
-Peer* connected_peer;
+//int calling;
+
+PeerConnectionManager peerConnectionManager;
+//Peer* connected_peer;
 
 
 
@@ -51,23 +55,29 @@ int main(int argc, char *argv[])
     server_address.sin_port = htons(CS_PORT);
     server_address.sin_family = AF_INET;
 
-    int client_server_socket = init_client_udp_connection(server_address);
-    if(client_server_socket < 0) handle_error("Error during udp connection init.");
+    connectionManager.setAddress(server_address);
+    int ret = connectionManager.initClientConnection();
+    if(ret < 0) handle_error("initClientConnection");
+
+
+    // int client_server_socket = init_client_udp_connection(server_address);
+    // if(client_server_socket < 0) handle_error("Error during udp connection init.");
 
     cout << "Client/server connection ok." << endl;
 
-    manager = new ConnectionManager(client_server_socket, server_address);
+    // manager = new ConnectionManager(client_server_socket, server_address);
 
     if (ipify(public_ip, sizeof(public_ip))) cout << "[ERROR] No IP address retrived." << endl;
     else cout << "public ip address: " << public_ip << endl;
 
     // authentication
-    int ret;
+    // int ret;
     do{
         ret = client_authentication();
         if(ret < 0){
-            close_udp_connection(client_server_socket);
-            delete manager;
+            connectionManager.closeConnection();
+//            close_udp_connection(client_server_socket);
+//            delete manager;
             handle_error("Error during client_authentication");
         }
     } while (ret != SUCCESS);
@@ -81,10 +91,11 @@ int main(int argc, char *argv[])
     send_thread = new thread(sender);
 
 
-    calling = false;
+    // calling = false;
     running = true;
     while (running){
-        ret = available(client_server_socket, 1, 0);
+        ret = connectionManager.available(1,0);
+        // ret = available(client_server_socket, 1, 0);
         if(ret < 0){
             if(errno == EINTR) continue;
         } else if(ret == 0) {
@@ -99,10 +110,11 @@ int main(int argc, char *argv[])
     send_thread->join();
     delete send_thread;
 
-    delete manager;
+//    delete manager;
 
     cout << "Closing client/server connection." << endl;
-    close_udp_connection(client_server_socket);
+    connectionManager.closeConnection();
+//    close_udp_connection(client_server_socket);
     cout << "client/server connection closed." << endl;
 
     cout << "Client closed." << endl;
@@ -137,11 +149,13 @@ int client_authentication() {
     int ret;
     Message out(AUTHENTICATION, "", "", credential);
     if(LOG) cout << "send: " << out << endl;
-    ret = manager->sendMessage(&out);
+    // ret = manager->sendMessage(&out);
+    ret = connectionManager.sendMessage(&out);
     if(ret < 0) return ret;
 
     Message in;
-    ret = manager->recvMessage(&in);
+    // ret = manager->recvMessage(&in);
+    ret = connectionManager.recvMessage(&in);
     if(ret < 0) return ret;
     if(LOG) cout << "recv: " << in << endl;
 
@@ -166,7 +180,8 @@ void client_quit() {
 
     Message out(QUIT, username, "", "");
     if(LOG) cout << "send: " << out << endl;
-    int ret = manager->sendMessage(&out);
+    // int ret = manager->sendMessage(&out);
+    int ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_quit");
 
 }
@@ -177,7 +192,8 @@ void client_users() {
 
     Message out(USERS, username, "", "");
     if(LOG) cout << "send: " << out << endl;
-    int ret = manager->sendMessage(&out);
+    // int ret = manager->sendMessage(&out);
+    int ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_users");
 
 }
@@ -225,7 +241,8 @@ void client_chat() {
     Message out(CHAT, username, dst, message);
     if(LOG) cout << "send: " << out << endl;
 
-    int ret = manager->sendMessage(&out);
+    // int ret = manager->sendMessage(&out);
+    int ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_chat");
 
 
@@ -237,6 +254,8 @@ void client_chat() {
 void client_audio_request() {
 
     client_status = CODE::AUDIO;
+
+    int ret;
 
     if(LOG) cout << "Client audio request." << endl;
 
@@ -264,11 +283,21 @@ void client_audio_request() {
     peer_address.sin_port = htons(P2P_PORT);
     peer_address.sin_family = AF_INET;
 
-    int socket = init_server_udp_connection(peer_address);
-    if(socket < 0){
+    ret = peerConnectionManager.initServerConnection(peer_address);
+    if(ret < 0) {
         perror("client_audio_request");
         return;
     }
+
+    peerConnectionManager.setCalling(true);
+    peerConnectionManager.setPeerName(dst);
+//    peerConnectionManager.setSocket(socket);
+
+//    int socket = init_server_udp_connection(peer_address);
+//    if(socket < 0){
+//        perror("client_audio_request");
+//        return;
+//    }
 
 
     // public ip and local ip
@@ -276,14 +305,18 @@ void client_audio_request() {
 
     Message out(AUDIO, username, dst, address_info);
     if(LOG) cout << "send: " << out << endl;
-    int ret = manager->sendMessage(&out);
+    // int ret = manager->sendMessage(&out);
+    ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_audio_request");
 
 
-    calling = true;
-    connected_peer = new Peer();
-    connected_peer->set_peer_name(dst);
-    connected_peer->set_peer_socket(socket);
+//    calling = true;
+//    connected_peer = new Peer();
+//    connected_peer->set_peer_name(dst);
+//    connected_peer->set_peer_socket(socket);
+
+
+
 
     if(LOG) cout << "Client audio request sent." << endl;
 
@@ -298,18 +331,28 @@ void client_audio_accept() {
 
     client_status = ACCEPT;
 
-    sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
+    int ret;
 
-    int peer_socket = init_client_udp_connection(remote_peer_addr);
-    if(peer_socket < 0) perror("client_audio_accept");
+    // sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
+    // sockaddr_in remote_peer_addr = peerConnectionManager.getAddress();
 
-    connected_peer->set_peer_socket(peer_socket);
+    ret = peerConnectionManager.initClientConnection();
+    if(ret < 0) perror("client_audio_accept");
+
+    // int peer_socket = init_client_udp_connection(remote_peer_addr);
+    // if(peer_socket < 0) perror("client_audio_accept");
+
+    // connected_peer->set_peer_socket(peer_socket);
+    // peerConnectionManager.setSocket(peer_socket);
 
     string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip));
 
-    Message out(ACCEPT, username, connected_peer->get_peer_name(), address_info);
+    string dst = peerConnectionManager.getPeerName();
+    Message out(ACCEPT, username, dst, address_info);
+    // Message out(ACCEPT, username, connected_peer->get_peer_name(), address_info);
     if(LOG) cout << "send: " << out << endl;
-    int ret = manager->sendMessage(&out);
+    // int ret = manager->sendMessage(&out);
+    ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_audio_accept");
 
     cout << " <ringoff> " << endl;
@@ -322,14 +365,24 @@ void client_audio_accept() {
 void client_audio_refuse() {
 
     client_status = REFUSE;
+    int ret;
 
-    if(connected_peer != nullptr && connected_peer->is_name_init()){
-        Message out(REFUSE, username, connected_peer->get_peer_name(), "");
+    if(peerConnectionManager.isInitPeerName()){
+        string peer_name = peerConnectionManager.getPeerName();
+        Message out(REFUSE, username, peer_name, "");
         if(LOG) cout << "send: " << out << endl;
-        int ret = manager->sendMessage(&out);
+        // int ret = manager->sendMessage(&out);
+        ret = connectionManager.sendMessage(&out);
         if(ret < 0) perror("client_audio_refuse");
 
     }
+//    if(connected_peer != nullptr && connected_peer->is_name_init()){
+//        Message out(REFUSE, username, connected_peer->get_peer_name(), "");
+//        if(LOG) cout << "send: " << out << endl;
+//        int ret = manager->sendMessage(&out);
+//        if(ret < 0) perror("client_audio_refuse");
+//
+//    }
 
     safe_peer_delete();
 
@@ -342,10 +395,13 @@ void client_audio_ringoff() {
 
     client_status = RINGOFF;
 
-    if(connected_peer != nullptr && connected_peer->is_name_init()) {
-        Message out(RINGOFF, username, connected_peer->get_peer_name(), "");
+    int ret;
+
+    if(peerConnectionManager.isInitPeerName()) {
+        Message out(RINGOFF, username, peerConnectionManager.getPeerName(), "Ringoff");
         if(LOG) cout << "send: " << out << endl;
-        int ret = manager->sendMessage(&out);
+        // int ret = manager->sendMessage(&out);
+        ret = connectionManager.sendMessage(&out);
         if(ret < 0) perror("client_audio_ringoff");
 
     }
@@ -366,11 +422,12 @@ void client_audio_ringoff() {
  */
 void recv_audio_request(Message *msg) {
 
-    if(calling){
+    int ret;
+    if(peerConnectionManager.isCalling()){
         // occupato in un altra chiamata
         Message out(REFUSE, username, msg->getSrc(), "Client busy.");
         if(LOG) cout << "send: " << out << endl;
-        int ret = manager->sendMessage(&out);
+        ret = connectionManager.sendMessage(&out);
         if(ret < 0) perror("recv_audio_request");
         return;
     }
@@ -390,11 +447,10 @@ void recv_audio_request(Message *msg) {
     remote_peer_address.sin_port = htons(P2P_PORT);
     remote_peer_address.sin_family = AF_INET;
 
-
-    calling = true;
-    connected_peer = new Peer();
-    connected_peer->set_peer_name(msg->getSrc());
-    connected_peer->set_peer_address(remote_peer_address);
+    string src = msg->getSrc();
+    peerConnectionManager.setCalling(true);
+    peerConnectionManager.setPeerName(src);
+    peerConnectionManager.setAddress(remote_peer_address);
 
 
 }
@@ -410,42 +466,20 @@ void recv_audio_accept(Message *msg) {
     // Alert that i'm ready for handshake
     Message out(HANDSHAKE, msg->getDst(), msg->getSrc(), "Start Handshake");
     if(LOG) cout << "send: " << out << endl;
-    ret = manager->sendMessage(&out);
+    // ret = manager->sendMessage(&out);
+    ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("recv_audio_accept");
 
 
     cout << "P2P Handshake." << endl;
 
-    int socket = connected_peer->get_peer_socket();
-    struct sockaddr_in address{};
-    socklen_t address_len = sizeof(struct sockaddr_in);
-
-    char buf[MSG_SIZE];
-    while (calling){
-        ret = available(socket, 1, 0);
-        if(ret < 0){
-            perror("recv_audio_accept - select");
-            return;
-        } else if(ret == 0){
-            // timeout occurred
-            if(LOG) cout << "recv_audio_handshake Timeout occurred." << endl;
-            if(!calling) return;
-        } else{
-
-            int ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
-            if(ret < 0) perror("recv_audio_accept - recvfrom");
-            if(LOG) cout << buf << endl;
-            break;
-        }
-    }
-    if(calling){
-        ret = sendto(connected_peer->get_peer_socket(), "HANDSHAKE CALLER", MSG_SIZE, 0,  (struct sockaddr*) &address, (socklen_t) sizeof(address));
-        if(ret < 0) perror("recv_audio_accept - sendto");
+    ret = peerConnectionManager.server_handshake();
+    if(ret < 0){
+        perror("server_peer_handshake");
+        return;
     }
 
     cout << "P2P Handshake end." << endl;
-
-    connected_peer->set_peer_address(address);
 
     thread caller_thread(call_routine);
     caller_thread.detach();
@@ -457,32 +491,11 @@ void recv_audio_handshake() {
 
     cout << "P2P Handshake." << endl;
 
-    int ret, socket = connected_peer->get_peer_socket();
-
-    if(calling){
-        ret = sendto(socket, "HANDSHAKE CALLED", MSG_SIZE, 0, nullptr, 0);
-        if(ret < 0) perror("recv_audio_handshake - sendto");
-    }
-
-    char buf[MSG_SIZE];
-    while (calling){
-        ret = available(socket, 1, 0);
-        if(ret < 0){
-            perror("recv_audio_handshake - select");
-            return;
-        } else if(ret == 0){
-            // timeout occurred
-            if(LOG) cout << "recv_audio_handshake Timeout occurred." << endl;
-            if(!calling) return;
-        } else{
-
-            ret = recvfrom(connected_peer->get_peer_socket(), buf, MSG_SIZE, 0, nullptr, nullptr);
-            if(ret < 0) perror("recv_audio_handshake - recvfrom");
-            if(LOG) cout << buf << endl;
-            break;
-
-        }
-
+    int ret;
+    ret = peerConnectionManager.client_handshake();
+    if(ret < 0){
+        perror("client_handshake");
+        return;
     }
 
     cout << "P2P Handshake end." << endl;
@@ -509,17 +522,16 @@ void recv_audio_refuse() {
 void sender_audio_routine(){
 
     if(LOG) cout << "sender_audio_routine" << endl;
-
-    int socket = connected_peer->get_peer_socket();
-    sockaddr_in address = connected_peer->get_peer_address();
-    int address_len = sizeof(address);
-
-    while (calling) {
+    
+    while (peerConnectionManager.isCalling()) {
 
         audioManagerOut.read();
 
-        if(calling){
-            int ret = sendto(socket, audioManagerOut.getBuffer(), audioManagerOut.getSize(), 0,  (struct sockaddr*) &address, (socklen_t) address_len);
+        char *buffer = audioManagerOut.getBuffer();
+        int size = audioManagerOut.getSize();
+
+        if(peerConnectionManager.isCalling()){
+            int ret = peerConnectionManager.sendMessage(buffer, size);
             if(ret < 0){
                 if(errno == ECONNREFUSED) break;
                 else perror("sender_audio_routine - sendto");
@@ -537,24 +549,23 @@ void receiver_audio_routine(){
 
     if(LOG) cout << "receiver_audio_routine" << endl;
 
-    int socket = connected_peer->get_peer_socket();
-    sockaddr_in address = connected_peer->get_peer_address();
-    int address_len = sizeof(address);
+    int ret;
 
-    while (calling) {
+    while (peerConnectionManager.isCalling()) {
 
         char *buffer = audioManagerIn.getBuffer();
         int size = audioManagerIn.getSize();
-        if(calling){
-            int ret = available(socket, 1, 0);
+        if(peerConnectionManager.isCalling()){
+
+            ret = available(peerConnectionManager.getSocket(), 1, 0);
             if(ret < 0) perror("receiver_audio_routine - select");
             else if(ret == 0) {
                 // timeout occurred
                 if(LOG) cout << "Timeout receiver_audio_routine." << endl;
-                if(!calling) break;
+                if(!peerConnectionManager.isCalling()) break;
             } else{
                 // available
-                ret = recvfrom(socket, buffer, size, 0, (struct sockaddr*) &address, (socklen_t*) &address_len);
+                ret = peerConnectionManager.recvMessage(buffer, size);
                 if(ret < 0){
                     if(errno == ECONNREFUSED) break;
                     else perror("receiver_audio_routine - recvfrom");
@@ -639,7 +650,7 @@ void sender(){
 
 
 
-        if(!calling){
+        if(!peerConnectionManager.isCalling()){
             if(line == "chat" ) client_chat();
             else if(line == "users" ) client_users();
             else if(line == "quit" ) client_quit();
@@ -652,7 +663,8 @@ void sender(){
 
         }else{
             if(client_status == AUDIO){
-                if(connected_peer->is_address_init()){
+                if(peerConnectionManager.isInitAddress()){
+                // if(connected_peer->is_address_init()){
                     if(line == "accept" ) client_audio_accept(); // client accetta chiamata di un client
                     else if(line == "refuse" ) client_audio_refuse(); // client rifiuta chiamata di un client
                     else cout << "Incoming call.. <accept> or <refuse> ?" << endl;
@@ -675,8 +687,10 @@ void sender(){
  */
 void receiver() {
 
+    int ret;
     Message in;
-    int ret = manager->recvMessage(&in);
+    // int ret = manager->recvMessage(&in);
+    connectionManager.recvMessage(&in);
     if(ret < 0) perror("receiver - recvMessage");
     if(LOG) cout << "recv: " << in << endl;
 
@@ -733,83 +747,11 @@ void receiver() {
 
 }
 
-// Initialization
-
-int init_server_udp_connection(sockaddr_in socket_address) {
-
-    if(LOG) cout << "UDP protocol setupping..." << endl;
-
-    int ret, socket_udp;
-    if(LOG) cout << " - socket.." << endl;
-    socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
-    if(socket_udp < 0){
-        perror("init_server_udp_connection - socket");
-        return socket_udp;
-    }
-    if(LOG) cout << " - socket succeeded." << endl;
-
-    if(LOG) cout << " - bind.." << endl;
-    ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
-    if(ret < 0){
-        perror("init_server_udp_connection - bind");
-        return ret;
-    }
-    if(LOG) cout << " - bind succeeded." << endl;
-
-    if(LOG) cout << "Udp protocol configured." << endl;
-
-    return socket_udp;
-}
-
-int init_client_udp_connection(sockaddr_in socket_address) {
-
-    if(LOG) cout << "UDP protocol setupping..." << endl;
-
-    if(LOG) cout << " -  socket.." << endl;
-    int socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
-    if(socket_udp < 0) {
-        perror("init_client_udp_connection - socket");
-        return  socket_udp;
-    }
-    if(LOG) cout << " - socket succeeded." << endl;
-
-    if(LOG) cout << " - connect.." << endl;
-    int ret = connect(socket_udp, (struct sockaddr *)&socket_address, sizeof(socket_address));
-    if(ret < 0) {
-        perror("init_client_udp_connection - connect");
-        return ret;
-    }
-    if(LOG) cout << " - connect succeeded.." << endl;
-
-    if(LOG) cout << " - retrive address info.." << endl;
-    struct sockaddr_in client_address{};
-    socklen_t len_client = sizeof(client_address);
-    ret = getsockname(socket_udp, (struct sockaddr*)&client_address, &len_client);
-    if(ret < 0) {
-        perror("init_client_udp_connection - getsockname");
-        return ret;
-    }
-
-    private_ip = client_address.sin_addr;
-    if(LOG) cout << " - local ip address: " << inet_ntoa(private_ip) << endl;
-    if(LOG) cout << " - address info ok." << endl;
-
-    if(LOG) cout << "Udp protocol configured." << endl;
-    return socket_udp;
-}
-
-int close_udp_connection(int socket) {
-
-    // close the descriptor
-    int ret = close(socket);
-    if(ret < 0) handle_error("close_udp_connection - close");
-    return ret;
-
-}
 
 /* Signal Handler for SIGINT */
 void sigintHandler(int sig_num)
 {
+    int ret;
     // signal(SIGINT, sigintHandler);
     if(LOG) cout << endl <<"Catch Ctrl+C - System status: " << client_status << endl;
     switch (client_status) {
@@ -819,74 +761,54 @@ void sigintHandler(int sig_num)
         case CODE::AUDIO:
             if(LOG) cout << "Audio request stopped." << endl;
             client_audio_refuse();
-            break;
+//            break;
+            return;
         case CODE::ACCEPT:
             if(LOG) cout << "Audio accept stopped." << endl;
             client_audio_ringoff();
-            cout << "Call interrupted, now you can stop service." << endl;
+//            cout << "Call interrupted, now you can stop service." << endl;
+//            return;
             return;
         case CODE::RINGOFF:
             if(LOG) cout << "Audio Ringoff stopped." << endl;
 //            client_audio_ringoff();
-            break;
+//            break;
+            return;
         default:
+
             if(LOG) cout << "Service Stopped." << endl;
+            client_quit();
+            send_thread->join();
+            delete send_thread;
+
             break;
     }
 
-    if(client_status != AUTHENTICATION){
-        client_quit();
-        send_thread->join();
-        delete send_thread;
-    }
-    int ret = close_udp_connection(manager->getSocket());
-    if(ret < 0) perror("sigintHandler - close_udp_connection");
-    delete manager;
+//    if(client_status != AUTHENTICATION){
+//        client_quit();
+//        send_thread->join();
+//        delete send_thread;
+//    }
+    ret = connectionManager.closeConnection();
+    // int ret = close_udp_connection(manager->getSocket());
+    if(ret < 0) perror("sigintHandler - closeConnection");
+    // delete manager;
     exit(EXIT_SUCCESS);
 
 }
 
-void signal_handler_init() {
-    /* signal handler */
-    struct sigaction sigIntHandler{};
-    sigIntHandler.sa_handler = sigintHandler;
-    sigemptyset(&sigIntHandler.sa_mask);
-    sigIntHandler.sa_flags = 0; //SA_RESTART
-    sigaction(SIGINT, &sigIntHandler, nullptr);
-    /* end signal handler */
-
-}
-
-
-
-/*
- * Wrapper for select operation
- * allow not blocking operation
- * ( as recvfrom, getline, etc..)
- */
-int available(int fd, int sec, int usec){
-    fd_set set;
-    FD_ZERO(&set); // clear set
-    FD_SET(fd, &set); // add server descriptor on set
-    // set timeout
-    timeval timeout{};
-    timeout.tv_sec = sec;
-    timeout.tv_usec = usec;
-
-    int ret = select( fd + 1, &set, nullptr, nullptr, &timeout);
-    if(ret < 0) perror("available - select");
-    return ret;
-}
 
 void safe_peer_delete() {
+    int ret;
+    peerConnectionManager.setCalling(false);
+    if(peerConnectionManager.isInitSocket()){
+        cout << "socket init." << endl;
+        ret = connectionManager.closeConnection();
+//        int ret = close_udp_connection(peerConnectionManager.getSocket());
+        if(ret < 0) perror("close_udp_connection");
+    }
+    peerConnectionManager = PeerConnectionManager();
 
-    calling = false;
-    if(connected_peer != nullptr){
-        if(connected_peer->is_socket_init())
-            close_udp_connection(connected_peer->get_peer_socket());
-        delete connected_peer;
-        connected_peer = nullptr;
-    } else if(LOG) cout << "safe_peer_delete - connected_peer == nullptr" << endl;
 }
 
 void print_info_message() {

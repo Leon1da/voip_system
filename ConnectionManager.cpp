@@ -2,8 +2,10 @@
 // Created by leonardo on 27/09/20.
 //
 
-#include "common.h"
 #include "ConnectionManager.h"
+
+
+using namespace std;
 
 
 Message::Message(CODE code, const string &src, const string &dst, const string &content) : code(code), src(src),
@@ -48,24 +50,28 @@ ostream &operator<<(ostream &os, const Message &message) {
 
 Message::Message() {}
 
-ConnectionManager::ConnectionManager(int socket) : socket(socket) {}
+ConnectionManager::ConnectionManager() {}
 
-ConnectionManager::ConnectionManager(int socket, const sockaddr_in &address) : socket(socket), address(address) {}
+ConnectionManager::ConnectionManager(int socket) : m_socket(socket), init_socket(true) {}
+
+ConnectionManager::ConnectionManager(int socket, const sockaddr_in &address) : m_socket(socket), m_address(address), init_socket(true), init_address(true) {}
 
 int ConnectionManager::getSocket() const {
-    return socket;
+    return m_socket;
 }
 
 void ConnectionManager::setSocket(int socket) {
-    ConnectionManager::socket = socket;
+    ConnectionManager::m_socket = socket;
+    ConnectionManager::init_socket = true;
 }
 
 const sockaddr_in &ConnectionManager::getAddress() const {
-    return address;
+    return m_address;
 }
 
 void ConnectionManager::setAddress(const sockaddr_in &address) {
-    ConnectionManager::address = address;
+    ConnectionManager::m_address = address;
+    ConnectionManager::init_address = true;
 }
 
 int ConnectionManager::sendMessage(Message *message) {
@@ -77,7 +83,7 @@ int ConnectionManager::sendMessage(Message *message) {
     strcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, message->getDst().c_str());
     strcpy( msg + MSG_HEADER_SIZE, message->getContent().c_str());
     
-    int ret = sendto(socket, msg, MSG_SIZE, 0, (struct sockaddr*) &address, sizeof(address));
+    int ret = sendto(m_socket, msg, MSG_SIZE, 0, (struct sockaddr*) &m_address, sizeof(m_address));
     return ret;
 
 }
@@ -91,7 +97,7 @@ int ConnectionManager::sendMessage(Message *p_message, sockaddr_in* p_adddress) 
     strcpy(msg + MSG_H_CODE_SIZE + MSG_H_SRC_SIZE, p_message->getDst().c_str());
     strcpy( msg + MSG_HEADER_SIZE, p_message->getContent().c_str());
 
-    int ret = sendto(socket, msg, MSG_SIZE, 0, (struct sockaddr*) p_adddress, sizeof(*p_adddress));
+    int ret = sendto(m_socket, msg, MSG_SIZE, 0, (struct sockaddr*) p_adddress, sizeof(*p_adddress));
     return ret;
 }
 
@@ -102,7 +108,7 @@ int ConnectionManager::recvMessage(Message *message) {
     struct sockaddr_in address{};
     socklen_t len = sizeof(address);
 
-    int ret = recvfrom(socket, msg, MSG_SIZE, 0, (struct sockaddr *) &address, &len);
+    int ret = recvfrom(m_socket, msg, MSG_SIZE, 0, (struct sockaddr *) &address, &len);
     if(ret < 0) return ret;
 
     CODE code = (CODE) atoi(msg);
@@ -124,7 +130,7 @@ int ConnectionManager::recvMessage(Message *message, sockaddr_in *src_address) {
     char msg[MSG_SIZE];
     socklen_t len = sizeof(*src_address);
 
-    int ret = recvfrom(socket, msg, MSG_SIZE, 0, (struct sockaddr *) src_address, &len);
+    int ret = recvfrom(m_socket, msg, MSG_SIZE, 0, (struct sockaddr *) src_address, &len);
     if(ret < 0) return ret;
 
     CODE code = (CODE) atoi(msg);
@@ -142,5 +148,216 @@ int ConnectionManager::recvMessage(Message *message, sockaddr_in *src_address) {
 
 }
 
+bool ConnectionManager::isInitSocket() const {
+    return init_socket;
+}
 
+bool ConnectionManager::isInitAddress() const {
+    return init_address;
+}
+
+int ConnectionManager::initServerConnection(sockaddr_in in) {
+
+    if(LOG) cout << "UDP protocol setupping..." << endl;
+
+    int ret;
+    if(LOG) cout << " - socket.." << endl;
+    int socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
+    if(socket_udp < 0){
+        perror("socket");
+        return socket_udp;
+    }
+    m_socket = socket_udp;
+
+    if(LOG) cout << " - socket succeeded." << endl;
+
+    if(LOG) cout << " - bind.." << endl;
+    ret = bind(m_socket, (struct sockaddr *) &in, sizeof(in));
+    if(ret < 0){
+        perror("bind");
+        return ret;
+    }
+    if(LOG) cout << " - bind succeeded." << endl;
+
+    if(LOG) cout << "Udp protocol configured." << endl;
+
+    return EXIT_SUCCESS;
+}
+
+int ConnectionManager::initClientConnection() {
+
+    if(LOG) cout << "UDP protocol setupping..." << endl;
+
+    if(LOG) cout << " -  socket.." << endl;
+    int socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
+    if(socket_udp < 0) {
+        perror("socket");
+        return  socket_udp;
+    }
+    m_socket = socket_udp;
+    if(LOG) cout << " - socket succeeded." << endl;
+
+    if(LOG) cout << " - connect.." << endl;
+    int ret = connect(socket_udp, (struct sockaddr *)&m_address, sizeof(m_address));
+    if(ret < 0) {
+        perror("connect");
+        return ret;
+    }
+    if(LOG) cout << " - connect succeeded.." << endl;
+
+    if(LOG) cout << "Udp protocol configured." << endl;
+
+    return EXIT_SUCCESS;
+}
+
+int ConnectionManager::getAddressInfo(sockaddr_in* client_address) {
+
+    if(LOG) cout << " - retrive address info.." << endl;
+
+    socklen_t len_client = sizeof(*client_address);
+    int ret = getsockname(m_socket, (struct sockaddr*)client_address, &len_client);
+    if(ret < 0) {
+        perror("getsockname");
+        return ret;
+    }
+
+    if(LOG) cout << " - retrive address info ok." << endl;
+
+    return EXIT_SUCCESS;
+
+}
+
+int ConnectionManager::closeConnection() {
+
+    // close the descriptor
+    int ret = close(m_socket);
+    if(ret < 0) perror("close");
+    return ret;
+}
+
+int ConnectionManager::available(int sec, int usec) {
+    return ::available(m_socket, sec, usec);
+}
+
+
+const string &PeerConnectionManager::getPeerName() const {
+    return m_peer_name;
+}
+
+void PeerConnectionManager::setPeerName(const string &peerName) {
+    m_peer_name = peerName;
+    init_peer_name = true;
+}
+
+PeerConnectionManager::PeerConnectionManager() {}
+
+bool PeerConnectionManager::isInitPeerName() const {
+    return init_peer_name;
+}
+
+int PeerConnectionManager::sendMessage(char *buf, int size) {
+    int ret;
+    ret = sendto(m_socket, buf, size, 0, (struct sockaddr*) &m_address, (socklen_t) sizeof(m_address));
+    return ret;
+}
+
+//struct sockaddr_in address{};
+//socklen_t address_len = sizeof(struct sockaddr_in);
+
+
+
+int PeerConnectionManager::recvMessage(char *buf, int size, sockaddr_in* address, socklen_t* address_len) {
+    int ret;
+    ret = recvfrom(m_socket, buf, size, 0, (struct sockaddr*) address, address_len);
+    return ret;
+}
+
+int PeerConnectionManager::recvMessage(char *buf, int size) {
+    return recvMessage(buf, size, nullptr, nullptr);
+}
+
+bool PeerConnectionManager::isCalling() const {
+    return m_calling;
+}
+
+void PeerConnectionManager::setCalling(bool calling) {
+    PeerConnectionManager::m_calling = calling;
+}
+
+int PeerConnectionManager::client_handshake() {
+    int ret;
+
+    if(m_calling){
+
+        ret = sendto(m_socket, "HANDSHAKE CALLED", MSG_SIZE, 0, nullptr, 0);
+        if(ret < 0) perror("sendto");
+
+    }
+
+    char buf[MSG_SIZE];
+    memset(buf, 0, MSG_SIZE);
+    while (m_calling){
+        ret = ::available(m_socket, 1, 0);
+        if(ret < 0){
+            perror("select");
+            return ret;
+        } else if(ret == 0){
+            // timeout occurred
+            if(LOG) cout << "client_handshake Timeout occurred." << endl;
+            if(!m_calling) return ret;
+        } else{
+
+            ret = recvfrom(m_socket, buf, MSG_SIZE, 0, nullptr, nullptr);
+            if(ret < 0){
+                perror("recvfrom");
+                return ret;
+            }
+            if(LOG) cout << buf << endl;
+            break;
+
+        }
+
+    }
+    return 0;
+}
+
+int PeerConnectionManager::server_handshake() {
+
+    int ret;
+
+    char buf[MSG_SIZE];
+    memset(buf, 0, MSG_SIZE);
+    while (m_calling){
+        ret = ::available(m_socket, 1, 0);
+        if(ret < 0){
+            perror("select");
+            return ret;
+        } else if(ret == 0){
+            // timeout occurred
+            if(LOG) cout << "server_peer_handshake Timeout occurred." << endl;
+            if(!m_calling) return 0;
+        } else{
+
+            struct sockaddr_in addr{};
+            socklen_t addr_len = sizeof(struct sockaddr_in);
+            int ret = recvfrom(m_socket, buf, MSG_SIZE, 0, (struct sockaddr*) &addr, (socklen_t*) &addr_len);
+            if(ret < 0){
+                perror("recvfrom");
+                return ret;
+            }
+            if(LOG) cout << buf << endl;
+            m_address = addr;
+            break;
+        }
+    }
+
+    if(m_calling){
+
+        ret = sendto(m_socket, "HANDSHAKE CALLER", MSG_SIZE, 0, (struct sockaddr*) &m_address, (socklen_t) sizeof(m_address));
+        if(ret < 0) perror("sendto");
+    }
+
+
+    return EXIT_SUCCESS;
+}
 

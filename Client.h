@@ -29,21 +29,20 @@
 #include <netdb.h>
 #include <ifaddrs.h>
 
-#include "common.h"
+#include "Common.h"
 #include "ConnectionManager.h"
 #include "AudioManager.h"
-#include "peer.h"
-#include "user.h"
+#include "User.h"
 
 
 
-int init_server_udp_connection(sockaddr_in socket_address);
-
-int init_client_udp_connection(sockaddr_in socket_address);
+//int init_server_udp_connection(sockaddr_in socket_address);
+//
+//int init_client_udp_connection(sockaddr_in socket_address);
 
 void udp_init();
 
-int close_udp_connection(int socket);
+//int close_udp_connection(int socket);
 
 // Comunication
 
@@ -96,7 +95,7 @@ void recv_audio_refuse();
 
 void safe_peer_delete();
 
-int available(int fd, int sec, int usec);
+//int available(int fd, int sec, int usec);
 
 void print_socket_address(sockaddr_in *pIn);
 

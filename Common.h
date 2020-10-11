@@ -1,11 +1,16 @@
 //
-// Created by leonardo on 12/09/20.
+// Created by leonardo on 11/10/20.
 //
 
-#ifndef CHAT_UDP_CONFIG_H
-#define CHAT_UDP_CONFIG_H
+#ifndef CHAT_UDP_COMMON_H
+#define CHAT_UDP_COMMON_H
 
-#endif //CHAT_UDP_CONFIG_H
+#endif //CHAT_UDP_COMMON_H
+
+#include <csignal>
+#include <cstdio>
+#include <bits/types/struct_timeval.h>
+#include <sys/select.h>
 
 #define XIAOMI_ADDRESS "192.168.1.69"
 #define TOSHIBA_ADDRESS "192.168.1.25"
@@ -26,6 +31,8 @@
 void sigintHandler(int sig_num);
 
 void signal_handler_init();
+
+int available(int fd, int sec, int usec);
 
 
 #define LOG 1
