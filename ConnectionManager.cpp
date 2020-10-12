@@ -208,7 +208,7 @@ int ConnectionManager::initClientConnection() {
 
 int ConnectionManager::getSockName(sockaddr_in* address) {
 
-    if(LOG) cout << " - retrive address info.." << endl;
+    // if(LOG) cout << " - retrive address info.." << endl;
 
     socklen_t len_client = sizeof(*address);
     int ret = getsockname(m_socket, (struct sockaddr*)address, &len_client);
@@ -217,14 +217,14 @@ int ConnectionManager::getSockName(sockaddr_in* address) {
         return ret;
     }
 
-    if(LOG) cout << " - retrive address info ok." << endl;
+    // if(LOG) cout << " - retrive address info ok." << endl;
 
     return EXIT_SUCCESS;
 
 }
 
 int ConnectionManager::getPeerName(sockaddr_in *address) {
-    if(LOG) cout << " - retrive address info.." << endl;
+    // if(LOG) cout << " - retrive address info.." << endl;
 
     socklen_t len_client = sizeof(*address);
     int ret = getpeername(m_socket, (struct sockaddr*)address, &len_client);
@@ -233,7 +233,7 @@ int ConnectionManager::getPeerName(sockaddr_in *address) {
         return ret;
     }
 
-    if(LOG) cout << " - retrive address info ok." << endl;
+    // if(LOG) cout << " - retrive address info ok." << endl;
 
     return EXIT_SUCCESS;
 }

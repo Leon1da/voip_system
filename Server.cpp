@@ -2,7 +2,6 @@
 // Created by leonardo on 13/05/20.
 //
 
-
 #include "Server.h"
 
 using namespace std;
@@ -14,6 +13,7 @@ list<User*> logged_users;
 ConnectionManager connectionManager;
 
 bool running;
+
 
 
 int main(int argc, char *argv[])
@@ -113,6 +113,7 @@ void recv_client_quit(Message *msg) {
 
 void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
 
+    bool logged = false;
     int ret;
     Message out;
 
@@ -137,6 +138,8 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
 
             cout << "User " << username << " has logged in." << endl;
 
+            logged = true;
+
         } else{
             // already logged
             out.setCode(ERROR);
@@ -157,9 +160,13 @@ void recv_client_authentication(sockaddr_in *client_addr, Message *msg) {
         if(LOG) cout << "Login failed." << endl;
     }
 
-    // int ret = manager->sendMessage(&out, client_addr);
     ret = connectionManager.sendMessage(&out, client_addr);
     if(ret < 0) perror("recv_client_authentication - sendMessage");
+
+    if(logged){
+        Message address_message(ADDRESS, "Server", username, string(inet_ntoa(client_addr->sin_addr)));
+        connectionManager.sendMessage(&address_message, client_addr);
+    }
 
 }
 
@@ -196,23 +203,45 @@ void recv_client_chat(Message *msg){
 
 }
 
-void recv_client_handshake_audio(Message *msg) {
+void recv_client_request_audio(Message *msg) {
 
     User* src = get_logged_user(msg->getSrc());
     if(src == nullptr){
-        cout << "[ERROR] src not found." << endl;
+        cout << "src not found." << endl;
         return;
     }
 
-    User* dst = get_logged_user(msg->getDst());
+    struct sockaddr_in* dst_addr;
+
+    User *dst = get_logged_user(msg->getDst());
     if(dst == nullptr){
-        cout << "[ERROR] dst not found." << endl;
-        return;
+        cout << "User " << msg->getDst() << " is not logged in or does not exist." << endl;
+
+        msg->setCode(ERROR);
+        msg->setContent("User " + msg->getDst() + " not found.");
+        msg->setDst(msg->getSrc());
+        msg->setSrc("Server");
+
+        dst_addr = &src->address;
+
+    }else {
+        if(src == dst){
+            msg->setCode(ERROR);
+            msg->setContent("you can't call yourself");
+            msg->setDst(msg->getSrc());
+            msg->setSrc("Server");
+
+            dst_addr = &src->address;
+        }else{
+            cout << "User " << msg->getSrc() << " is calling user " << msg->getDst() << "." << endl;
+            dst_addr = &dst->address;
+        }
     }
 
-    // int ret = manager->sendMessage(msg, &dst->address);
-    int ret = connectionManager.sendMessage(msg, &dst->address);
-    if(ret < 0) perror("recv_client_accept_audio - sendMessage");
+//    int ret = manager->sendMessage(msg, dst_addr);
+    int ret = connectionManager.sendMessage(msg, dst_addr);
+    if(ret < 0) perror("recv_client_request_audio - sendMessage");
+
 
 }
 
@@ -232,6 +261,26 @@ void recv_client_accept_audio(Message *msg) {
 
     // int ret = manager->sendMessage(msg, &dst->address);
 
+    int ret = connectionManager.sendMessage(msg, &dst->address);
+    if(ret < 0) perror("recv_client_accept_audio - sendMessage");
+
+}
+
+void recv_client_handshake_audio(Message *msg) {
+
+    User* src = get_logged_user(msg->getSrc());
+    if(src == nullptr){
+        cout << "[ERROR] src not found." << endl;
+        return;
+    }
+
+    User* dst = get_logged_user(msg->getDst());
+    if(dst == nullptr){
+        cout << "[ERROR] dst not found." << endl;
+        return;
+    }
+
+    // int ret = manager->sendMessage(msg, &dst->address);
     int ret = connectionManager.sendMessage(msg, &dst->address);
     if(ret < 0) perror("recv_client_accept_audio - sendMessage");
 
@@ -274,48 +323,6 @@ void recv_client_ringoff_audio(Message *msg) {
     // int ret = manager->sendMessage(msg, &dst->address);
     int ret = connectionManager.sendMessage(msg, &dst->address);
     if(ret < 0) perror("recv_client_ringoff_audio - sendMessage");
-
-}
-
-void recv_client_request_audio(Message *msg) {
-
-    User* src = get_logged_user(msg->getSrc());
-    if(src == nullptr){
-        cout << "src not found." << endl;
-        return;
-    }
-
-    struct sockaddr_in* dst_addr;
-
-    User *dst = get_logged_user(msg->getDst());
-    if(dst == nullptr){
-        cout << "User " << msg->getDst() << " is not logged in or does not exist." << endl;
-
-        msg->setCode(ERROR);
-        msg->setContent("User " + msg->getDst() + " not found.");
-        msg->setDst(msg->getSrc());
-        msg->setSrc("Server");
-
-        dst_addr = &src->address;
-
-    }else {
-        if(src == dst){
-            msg->setCode(ERROR);
-            msg->setContent("you can't call yourself");
-            msg->setDst(msg->getSrc());
-            msg->setSrc("Server");
-
-            dst_addr = &src->address;
-        }else{
-            cout << "User " << msg->getSrc() << " is calling user " << msg->getDst() << "." << endl;
-            dst_addr = &dst->address;
-        }
-    }
-
-//    int ret = manager->sendMessage(msg, dst_addr);
-    int ret = connectionManager.sendMessage(msg, &dst->address);
-    if(ret < 0) perror("recv_client_request_audio - sendMessage");
-
 
 }
 
@@ -484,3 +491,11 @@ void receiver() {
 
 }
 
+
+void print_socket_address(sockaddr_in *pIn) {
+
+    cout << "address info: " << inet_ntoa(pIn->sin_addr)
+         << " - " << to_string(htonl(pIn->sin_addr.s_addr))
+         << " - " << to_string(ntohs(pIn->sin_port)) << endl;
+
+}

@@ -12,8 +12,8 @@
 #include <ostream>
 #include <cstdio>
 #include <iostream>
-
-#include <zconf.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
 // MSG
 
@@ -51,7 +51,8 @@ enum CODE{
     ACCEPT = 1012,
     REFUSE = 1013,
     RINGOFF = 1015,
-    HANDSHAKE = 1016
+    HANDSHAKE = 1016,
+    ADDRESS = 1017
 };
 
 
@@ -172,6 +173,6 @@ public:
     int server_handshake();
 };
 
-
+void print_socket_address(sockaddr_in *pIn);
 
 #endif //CHAT_UDP_CONNECTIONMANAGER_H

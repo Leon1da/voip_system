@@ -17,8 +17,9 @@ ConnectionManager connectionManager;
 PeerConnectionManager peerConnectionManager;
 
 
-char public_ip[256];
-in_addr private_ip;
+string public_address;
+in_addr local_address;
+in_port_t local_port;
 
 
 AudioManager audioManagerIn;
@@ -28,9 +29,6 @@ AudioManager audioManagerOut;
 
 thread* send_thread;
 
-
-
-//int calling;
 
 
 
@@ -65,21 +63,15 @@ int main(int argc, char *argv[])
     connectionManager.setSocket(ret);
 
     struct sockaddr_in addr{};
-    bzero(&server_address, sizeof(server_address));
-    ret = connectionManager.getPeerName(&addr);
-    cout << "getpeername:" << endl;
-    print_socket_address(&addr);
-
-    bzero(&server_address, sizeof(server_address));
+    bzero(&addr, sizeof(addr));
     ret = connectionManager.getSockName(&addr);
-    cout << "getsockname:" << endl;
-    print_socket_address(&addr);
+    if(ret < 0) handle_error("getSockName");
+
+    local_address = addr.sin_addr;
+    local_port = addr.sin_port;
+    if(LOG) print_socket_address(&addr);
 
     cout << "Client/server connection ok." << endl;
-
-    if (ipify(public_ip, sizeof(public_ip))) cout << "[ERROR] No IP address retrived." << endl;
-    else cout << "public ip address: " << public_ip << endl;
-
 
     running = true;
     // authentication
@@ -109,7 +101,6 @@ int main(int argc, char *argv[])
 
     while (running){
         ret = available(connectionManager.getSocket(), 1, 0);
-        // ret = available(client_server_socket, 1, 0);
         if(ret < 0){
             if(errno == EINTR) continue;
         } else if(ret == 0) {
@@ -165,7 +156,6 @@ int client_authentication() {
     if(ret < 0) return ret;
 
     Message in;
-    // ret = manager->recvMessage(&in);
     ret = connectionManager.recvMessage(&in);
     if(ret < 0) return ret;
     if(LOG) cout << "recv: " << in << endl;
@@ -192,7 +182,6 @@ void client_quit() {
 
     Message out(QUIT, username, "", "");
     if(LOG) cout << "send: " << out << endl;
-    // int ret = manager->sendMessage(&out);
     int ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_quit");
 
@@ -204,7 +193,6 @@ void client_users() {
 
     Message out(USERS, username, "", "");
     if(LOG) cout << "send: " << out << endl;
-    // int ret = manager->sendMessage(&out);
     int ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_users");
 
@@ -253,7 +241,6 @@ void client_chat() {
     Message out(CHAT, username, dst, message);
     if(LOG) cout << "send: " << out << endl;
 
-    // int ret = manager->sendMessage(&out);
     int ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_chat");
 
@@ -306,12 +293,10 @@ void client_audio_request() {
     peerConnectionManager.setSocket(ret);
 
 
-    // public ip and local ip
-    string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip));
+    string address_info = public_address + " " + string(inet_ntoa(local_address));
 
     Message out(AUDIO, username, dst, address_info);
     if(LOG) cout << "send: " << out << endl;
-    // int ret = manager->sendMessage(&out);
     ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_audio_request");
 
@@ -337,7 +322,8 @@ void client_audio_accept() {
     peerConnectionManager.setSocket(ret);
 
 
-    string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip));
+    //string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip));
+    string address_info = string(inet_ntoa(local_address));
 
     string dst = peerConnectionManager.getPeerName();
     Message out(ACCEPT, username, dst, address_info);
@@ -434,8 +420,11 @@ void recv_audio_request(Message *msg) {
 
     struct sockaddr_in remote_peer_address{};
     bzero(&remote_peer_address, sizeof(remote_peer_address));
-    if(public_ip_string == public_ip) remote_peer_address.sin_addr.s_addr = inet_addr(local_ip_string.c_str());
+//    if(public_ip_string == public_ip) remote_peer_address.sin_addr.s_addr = inet_addr(local_ip_string.c_str());
+//    else remote_peer_address.sin_addr.s_addr = inet_addr(public_ip_string.c_str());
+    if(public_ip_string == public_address) remote_peer_address.sin_addr.s_addr = inet_addr(local_ip_string.c_str());
     else remote_peer_address.sin_addr.s_addr = inet_addr(public_ip_string.c_str());
+
     remote_peer_address.sin_port = htons(P2P_PORT);
     remote_peer_address.sin_family = AF_INET;
 
@@ -689,6 +678,10 @@ void receiver() {
     if(LOG) cout << "recv: " << in << endl;
 
     switch (in.getCode()) {
+        case ADDRESS:
+            public_address = in.getContent();
+            cout << "[Server] Your ip address is: " << public_address << endl;
+            break;
         case CHAT:
             cout << "[" << in.getSrc() << "] " << in.getContent() << endl;
             break;
