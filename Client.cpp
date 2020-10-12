@@ -8,6 +8,15 @@
 
 using namespace std;
 
+
+CODE client_status;
+bool running;
+string username;
+
+ConnectionManager connectionManager;
+PeerConnectionManager peerConnectionManager;
+
+
 char public_ip[256];
 in_addr private_ip;
 
@@ -15,20 +24,15 @@ in_addr private_ip;
 AudioManager audioManagerIn;
 AudioManager audioManagerOut;
 
-ConnectionManager connectionManager;
 
-//ConnectionManager* manager;
+
 thread* send_thread;
 
-string username;
 
-CODE client_status;
-bool running;
 
 //int calling;
 
-PeerConnectionManager peerConnectionManager;
-//Peer* connected_peer;
+
 
 
 
@@ -58,29 +62,41 @@ int main(int argc, char *argv[])
     connectionManager.setAddress(server_address);
     int ret = connectionManager.initClientConnection();
     if(ret < 0) handle_error("initClientConnection");
+    connectionManager.setSocket(ret);
 
+    struct sockaddr_in addr{};
+    bzero(&server_address, sizeof(server_address));
+    ret = connectionManager.getPeerName(&addr);
+    cout << "getpeername:" << endl;
+    print_socket_address(&addr);
 
-    // int client_server_socket = init_client_udp_connection(server_address);
-    // if(client_server_socket < 0) handle_error("Error during udp connection init.");
+    bzero(&server_address, sizeof(server_address));
+    ret = connectionManager.getSockName(&addr);
+    cout << "getsockname:" << endl;
+    print_socket_address(&addr);
 
     cout << "Client/server connection ok." << endl;
-
-    // manager = new ConnectionManager(client_server_socket, server_address);
 
     if (ipify(public_ip, sizeof(public_ip))) cout << "[ERROR] No IP address retrived." << endl;
     else cout << "public ip address: " << public_ip << endl;
 
+
+    running = true;
     // authentication
-    // int ret;
     do{
         ret = client_authentication();
         if(ret < 0){
             connectionManager.closeConnection();
-//            close_udp_connection(client_server_socket);
-//            delete manager;
             handle_error("Error during client_authentication");
         }
-    } while (ret != SUCCESS);
+    } while (ret != SUCCESS && running);
+
+    if(!running){
+        cout << "Closing client/server connection." << endl;
+        connectionManager.closeConnection();
+        cout << "client/server connection closed." << endl;
+        exit(EXIT_SUCCESS);
+    }
 
     client_status = SUCCESS;
 
@@ -91,10 +107,8 @@ int main(int argc, char *argv[])
     send_thread = new thread(sender);
 
 
-    // calling = false;
-    running = true;
     while (running){
-        ret = connectionManager.available(1,0);
+        ret = available(connectionManager.getSocket(), 1, 0);
         // ret = available(client_server_socket, 1, 0);
         if(ret < 0){
             if(errno == EINTR) continue;
@@ -110,11 +124,8 @@ int main(int argc, char *argv[])
     send_thread->join();
     delete send_thread;
 
-//    delete manager;
-
     cout << "Closing client/server connection." << endl;
     connectionManager.closeConnection();
-//    close_udp_connection(client_server_socket);
     cout << "client/server connection closed." << endl;
 
     cout << "Client closed." << endl;
@@ -165,6 +176,7 @@ int client_authentication() {
         username = in.getDst();
         return SUCCESS;
     }
+
     return ERROR;
 
 }
@@ -291,13 +303,7 @@ void client_audio_request() {
 
     peerConnectionManager.setCalling(true);
     peerConnectionManager.setPeerName(dst);
-//    peerConnectionManager.setSocket(socket);
-
-//    int socket = init_server_udp_connection(peer_address);
-//    if(socket < 0){
-//        perror("client_audio_request");
-//        return;
-//    }
+    peerConnectionManager.setSocket(ret);
 
 
     // public ip and local ip
@@ -308,14 +314,6 @@ void client_audio_request() {
     // int ret = manager->sendMessage(&out);
     ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_audio_request");
-
-
-//    calling = true;
-//    connected_peer = new Peer();
-//    connected_peer->set_peer_name(dst);
-//    connected_peer->set_peer_socket(socket);
-
-
 
 
     if(LOG) cout << "Client audio request sent." << endl;
@@ -333,25 +331,19 @@ void client_audio_accept() {
 
     int ret;
 
-    // sockaddr_in remote_peer_addr = connected_peer->get_peer_address();
-    // sockaddr_in remote_peer_addr = peerConnectionManager.getAddress();
-
     ret = peerConnectionManager.initClientConnection();
     if(ret < 0) perror("client_audio_accept");
 
-    // int peer_socket = init_client_udp_connection(remote_peer_addr);
-    // if(peer_socket < 0) perror("client_audio_accept");
+    peerConnectionManager.setSocket(ret);
 
-    // connected_peer->set_peer_socket(peer_socket);
-    // peerConnectionManager.setSocket(peer_socket);
 
     string address_info = string(public_ip) + " " + string(inet_ntoa(private_ip));
 
     string dst = peerConnectionManager.getPeerName();
     Message out(ACCEPT, username, dst, address_info);
-    // Message out(ACCEPT, username, connected_peer->get_peer_name(), address_info);
+
     if(LOG) cout << "send: " << out << endl;
-    // int ret = manager->sendMessage(&out);
+
     ret = connectionManager.sendMessage(&out);
     if(ret < 0) perror("client_audio_accept");
 
@@ -525,7 +517,7 @@ void sender_audio_routine(){
     
     while (peerConnectionManager.isCalling()) {
 
-        audioManagerOut.read();
+        if(peerConnectionManager.isCalling()) audioManagerOut.read();
 
         char *buffer = audioManagerOut.getBuffer();
         int size = audioManagerOut.getSize();
@@ -558,7 +550,10 @@ void receiver_audio_routine(){
         if(peerConnectionManager.isCalling()){
 
             ret = available(peerConnectionManager.getSocket(), 1, 0);
-            if(ret < 0) perror("receiver_audio_routine - select");
+            if(ret < 0){
+                perror("receiver_audio_routine - select");
+                break;
+            }
             else if(ret == 0) {
                 // timeout occurred
                 if(LOG) cout << "Timeout receiver_audio_routine." << endl;
@@ -574,7 +569,7 @@ void receiver_audio_routine(){
 
         }
 
-        audioManagerIn.write();
+        if(peerConnectionManager.isCalling()) audioManagerIn.write();
 
     }
 
@@ -689,7 +684,6 @@ void receiver() {
 
     int ret;
     Message in;
-    // int ret = manager->recvMessage(&in);
     connectionManager.recvMessage(&in);
     if(ret < 0) perror("receiver - recvMessage");
     if(LOG) cout << "recv: " << in << endl;
@@ -752,63 +746,47 @@ void receiver() {
 void sigintHandler(int sig_num)
 {
     int ret;
-    // signal(SIGINT, sigintHandler);
     if(LOG) cout << endl <<"Catch Ctrl+C - System status: " << client_status << endl;
     switch (client_status) {
         case CODE::AUTHENTICATION:
             if(LOG) cout << "Authentication stopped." << endl;
+            running = false;
             break;
         case CODE::AUDIO:
             if(LOG) cout << "Audio request stopped." << endl;
             client_audio_refuse();
-//            break;
-            return;
+            break;
         case CODE::ACCEPT:
             if(LOG) cout << "Audio accept stopped." << endl;
             client_audio_ringoff();
-//            cout << "Call interrupted, now you can stop service." << endl;
-//            return;
-            return;
+            break;
         case CODE::RINGOFF:
             if(LOG) cout << "Audio Ringoff stopped." << endl;
-//            client_audio_ringoff();
-//            break;
-            return;
+            break;
         default:
-
-            if(LOG) cout << "Service Stopped." << endl;
             client_quit();
-            send_thread->join();
-            delete send_thread;
-
             break;
     }
 
-//    if(client_status != AUTHENTICATION){
-//        client_quit();
-//        send_thread->join();
-//        delete send_thread;
-//    }
-    ret = connectionManager.closeConnection();
-    // int ret = close_udp_connection(manager->getSocket());
-    if(ret < 0) perror("sigintHandler - closeConnection");
-    // delete manager;
-    exit(EXIT_SUCCESS);
 
 }
 
 
 void safe_peer_delete() {
+    cout << "safe_peer_delete" << endl;
     int ret;
     peerConnectionManager.setCalling(false);
     if(peerConnectionManager.isInitSocket()){
-        cout << "socket init." << endl;
-        ret = connectionManager.closeConnection();
+        cout << "socket closing." << endl;
+        ret = peerConnectionManager.closeConnection();
+        cout << "socket closed." << endl;
 //        int ret = close_udp_connection(peerConnectionManager.getSocket());
+
         if(ret < 0) perror("close_udp_connection");
     }
     peerConnectionManager = PeerConnectionManager();
-
+    client_status = SUCCESS;
+    cout << "safe_peer_delete end." << endl;
 }
 
 void print_info_message() {

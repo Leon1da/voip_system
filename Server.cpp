@@ -11,7 +11,6 @@ using namespace std;
 list<User> registered_users;
 list<User*> logged_users;
 
-//ConnectionManager* manager;
 ConnectionManager connectionManager;
 
 bool running;
@@ -31,10 +30,8 @@ int main(int argc, char *argv[])
     int ret = connectionManager.initServerConnection(server_address);
     if(ret < 0) handle_error("initServerConnection");
 
-//    int server_socket = init_server_udp_connection(server_address);
-//    if(server_socket < 0) handle_error("init_server_udp_connection");
-//
-//    manager = new ConnectionManager(server_socket);
+    connectionManager.setSocket(ret);
+
 
     cout << "Server ready." << endl;
     print_registered_users();
@@ -54,43 +51,7 @@ int main(int argc, char *argv[])
         }
     }
 
-
-//    fd_set set;
-//    FD_ZERO(&set); // clear set
-//    FD_SET(server_socket, &set); // add server descriptor on set
-//    // set timeout
-//    timeval timeout;
-//    timeout.tv_sec = 5;
-//    timeout.tv_usec = 0;
-//
-//    int ret;
-//
-//    running = true;
-//    while(running){
-//
-//        ret = select(MAX_CONN_QUEUE + 1, &set, nullptr, nullptr, &timeout);
-//        if(ret < 0){
-//            if(errno == EINTR) continue;
-//            perror("Error during server select operation: ");
-//            exit(EXIT_FAILURE);
-//        }
-//        else if(ret == 0) {
-//             // timeout occurred
-//            timeout.tv_sec = 5;
-//            FD_ZERO(&set); // clear set
-//            FD_SET(server_socket, &set); // add server descriptor on set
-//            if(!running) cout << "[Info] Timeout occurred, closing server." << endl;
-//        }else {
-//            // Available data
-//            receiver();
-//        }
-//
-//    }
-
     for(User* u: logged_users) delete u;
-
-//    ret = close_udp_connection(server_socket);
-//    if(ret < 0) perror("close_udp_connection");
 
     if(LOG) cout << "closing connection.." << endl;
     ret = connectionManager.closeConnection();
@@ -381,40 +342,6 @@ void init_server() {
     if(LOG) cout << "Signal handler init ok." << endl;
 }
 
-//int init_server_udp_connection(sockaddr_in socket_address) {
-//
-//    if(LOG) cout << "UDP protocol setupping..." << endl;
-//
-//    int ret, socket_udp;
-//    if(LOG) cout << " - socket.." << endl;
-//    socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
-//    if(socket_udp < 0){
-//        perror("init_server_udp_connection - socket");
-//        return socket_udp;
-//    }
-//    if(LOG) cout << " - socket succeeded." << endl;
-//
-//    if(LOG) cout << " - bind.." << endl;
-//    ret = bind(socket_udp, (struct sockaddr *) &socket_address, sizeof(socket_address));
-//    if(ret < 0){
-//        perror("init_server_udp_connection - bind");
-//        return ret;
-//    }
-//    if(LOG) cout << " - bind succeeded." << endl;
-//
-//    if(LOG) cout << "Udp protocol configured." << endl;
-//
-//    return socket_udp;
-//}
-//
-//int close_udp_connection(int socket) {
-//
-//    // close the descriptor
-//    int ret = close(socket);
-//    if(ret < 0) handle_error("close_udp_connection - close");
-//    return ret;
-//
-//}
 
 list<User> read_users_from_file(const string filename) {
 

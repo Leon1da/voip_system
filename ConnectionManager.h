@@ -94,17 +94,14 @@ class ConnectionManager {
 
 private:
 
-    bool init_socket = false;
-    bool init_address = false;
+    bool init_socket;
+    bool init_address;
 
 protected:
     int m_socket;
     sockaddr_in m_address;
 
 public:
-    ConnectionManager(int socket, const sockaddr_in &address);
-
-    ConnectionManager(int socket);
 
     ConnectionManager();
 
@@ -134,7 +131,9 @@ public:
 
     int closeConnection();
 
-    int getAddressInfo(sockaddr_in *client_address);
+    int getSockName(sockaddr_in *address);
+
+    int getPeerName(sockaddr_in *address);
 
     int available(int sec, int usec);
 };
@@ -143,10 +142,10 @@ class PeerConnectionManager : public ConnectionManager{
 
 private:
 
-    bool m_calling = false;
+    bool m_calling;
     string m_peer_name;
 
-    bool init_peer_name = false;
+    bool init_peer_name;
 
 public:
 

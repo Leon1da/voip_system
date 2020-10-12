@@ -52,10 +52,6 @@ Message::Message() {}
 
 ConnectionManager::ConnectionManager() {}
 
-ConnectionManager::ConnectionManager(int socket) : m_socket(socket), init_socket(true) {}
-
-ConnectionManager::ConnectionManager(int socket, const sockaddr_in &address) : m_socket(socket), m_address(address), init_socket(true), init_address(true) {}
-
 int ConnectionManager::getSocket() const {
     return m_socket;
 }
@@ -167,12 +163,13 @@ int ConnectionManager::initServerConnection(sockaddr_in in) {
         perror("socket");
         return socket_udp;
     }
-    m_socket = socket_udp;
+
+    // setSocket(socket_udp); // m_socket = socket_udp
 
     if(LOG) cout << " - socket succeeded." << endl;
 
     if(LOG) cout << " - bind.." << endl;
-    ret = bind(m_socket, (struct sockaddr *) &in, sizeof(in));
+    ret = bind(socket_udp, (struct sockaddr *) &in, sizeof(in));
     if(ret < 0){
         perror("bind");
         return ret;
@@ -181,7 +178,7 @@ int ConnectionManager::initServerConnection(sockaddr_in in) {
 
     if(LOG) cout << "Udp protocol configured." << endl;
 
-    return EXIT_SUCCESS;
+    return socket_udp;
 }
 
 int ConnectionManager::initClientConnection() {
@@ -194,7 +191,6 @@ int ConnectionManager::initClientConnection() {
         perror("socket");
         return  socket_udp;
     }
-    m_socket = socket_udp;
     if(LOG) cout << " - socket succeeded." << endl;
 
     if(LOG) cout << " - connect.." << endl;
@@ -207,15 +203,15 @@ int ConnectionManager::initClientConnection() {
 
     if(LOG) cout << "Udp protocol configured." << endl;
 
-    return EXIT_SUCCESS;
+    return socket_udp;
 }
 
-int ConnectionManager::getAddressInfo(sockaddr_in* client_address) {
+int ConnectionManager::getSockName(sockaddr_in* address) {
 
     if(LOG) cout << " - retrive address info.." << endl;
 
-    socklen_t len_client = sizeof(*client_address);
-    int ret = getsockname(m_socket, (struct sockaddr*)client_address, &len_client);
+    socklen_t len_client = sizeof(*address);
+    int ret = getsockname(m_socket, (struct sockaddr*)address, &len_client);
     if(ret < 0) {
         perror("getsockname");
         return ret;
@@ -225,6 +221,21 @@ int ConnectionManager::getAddressInfo(sockaddr_in* client_address) {
 
     return EXIT_SUCCESS;
 
+}
+
+int ConnectionManager::getPeerName(sockaddr_in *address) {
+    if(LOG) cout << " - retrive address info.." << endl;
+
+    socklen_t len_client = sizeof(*address);
+    int ret = getpeername(m_socket, (struct sockaddr*)address, &len_client);
+    if(ret < 0) {
+        perror("getsockname");
+        return ret;
+    }
+
+    if(LOG) cout << " - retrive address info ok." << endl;
+
+    return EXIT_SUCCESS;
 }
 
 int ConnectionManager::closeConnection() {
@@ -239,7 +250,6 @@ int ConnectionManager::available(int sec, int usec) {
     return ::available(m_socket, sec, usec);
 }
 
-
 const string &PeerConnectionManager::getPeerName() const {
     return m_peer_name;
 }
@@ -249,7 +259,9 @@ void PeerConnectionManager::setPeerName(const string &peerName) {
     init_peer_name = true;
 }
 
-PeerConnectionManager::PeerConnectionManager() {}
+PeerConnectionManager::PeerConnectionManager() {
+    m_calling = false;
+}
 
 bool PeerConnectionManager::isInitPeerName() const {
     return init_peer_name;
@@ -260,11 +272,6 @@ int PeerConnectionManager::sendMessage(char *buf, int size) {
     ret = sendto(m_socket, buf, size, 0, (struct sockaddr*) &m_address, (socklen_t) sizeof(m_address));
     return ret;
 }
-
-//struct sockaddr_in address{};
-//socklen_t address_len = sizeof(struct sockaddr_in);
-
-
 
 int PeerConnectionManager::recvMessage(char *buf, int size, sockaddr_in* address, socklen_t* address_len) {
     int ret;
