@@ -38,3 +38,6 @@ To disconnect a client from the server, select the "exit" option from the main m
 ##### Server Shutdown
 To shut down the server, send the "shutdown" command.
 
+# Author
+Leonardo Ospizio
+
