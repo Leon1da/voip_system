@@ -17,6 +17,7 @@ To compile the project, define the SERVER_ADDRESS and SERVER_PORT variables in t
 ### Running
 To run the system, start the server by executing the command "./server", and then launch two or more clients using the command "./client".
 
+### Usage
 ##### Registered Users
 Here is a list of some registered users along with their corresponding username and password:
 - leonardo leonardo
