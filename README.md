@@ -1,63 +1,40 @@
-# privatechat
+# VoIP system
+This project was developed as part of the Operating System course taught by Professor Giorgio Grisetti at Sapienza University of Rome. The course details can be found at the following link: [Operating System Course - Sapienza University of Rome](https://sites.google.com/diag.uniroma1.it/sistemi-operativi-1819).
 
-Questo progetto riguarda lo sviluppo di una chat privata tra utenti registrati al servizio.
-Un utente gia' registrato puo' accede al servizio con le sue credenziali (username e password) ed ha la possibilita` di inviare messaggi ad altri utenti online.
+The VoIP system project aims to create a private communication system that includes both VoIP functionality and chat capabilities. Registered users can log in to the service using their username and password, enabling them to exchange messages with other online users.
 
-Una volta effettuato l'accesso, l'utente puo scegliere tra diverse opzioni che il servizio mette a disposizione:
-- users, mostra gli utenti online 
-- chat, apre una chat con un utente che e` online
-- exit, esce dalla chat 
-- video, a breve verra` implementato un servizio di videochat
+Once logged in, users have access to the following options:
+- "users": displays the list of online users.
+- "chat": opens a chat session with an online user.
+- "exit": allows the user to exit the chat.
+- "video": a video chat service is planned for future implementation.
 
-Scegliendo "chat", l'utente avra la possibilita' di scegliere un utente a cui inviare messaggi, se l'utente risulta online lo scambio di messaggi avra' inizio.
-In qualunque momento l'utente puo inviare "return" per tornare al menu principale.
+The project utilizes both TCP and UDP protocols to implement the chat and the VoIP communication, respectively.
 
-- HOW
-- Client 
-Il client e' sviluppato in modo tale da permettere all'utente di inviare/ricevere messaggi contemporaneamente.
-Una volta effettuato il setup della connessione al server, vengono creati due thread, ripettivamente "sender" e "receiver" che gestiscono, uno l'acquisizione dei messaggi da terminale e il loro invio e l'altro la ricezione e stampa a video degli stessi.
-Una volta inviato il comando "exit" il client uscira` rilasciando la memoria allocata.
+### Compilation
+To compile the project, define the SERVER_ADDRESS and SERVER_PORT variables in the 'utils.h' file, and then run the "make" command.
 
-- Server 
-il server si occupa di inoltrare i messaggi tra i vari client online.
-Crea un thread per ogni connessione in ingresso su cui gestisce la stessa.
-Una volta autenticato l'utente, invia al client un messaggio di benvenuto con le opzioni disponibili.
-Quando arriva una richiesta di chat (open_chat), verifica che l'utente destinatario sia online, dopo di che parte la sessione di chat verso l'utente desiderato (start_comunication).
-Il server puo' essere interrotto in qualunque momento inviando "shutdown" da terminale, in tal caso si spegnera' quando non ci saranno' piu' utenti online.
+### Running
+To run the system, start the server by executing the command "./server", and then launch two or more clients using the command "./client".
 
-
-- HOW TO RUN
-1. in utils.h definire SERVER_ADDRESS e SERVER_PORT
-
-da terminale lanciare in ordine:
-- make
-- ./server
-- ./client (almeno 2)
-
-Effettuare il login (utenti registrati):
-
-- (username password)
+##### Registered Users
+Here is a list of some registered users along with their corresponding username and password:
 - leonardo leonardo
 - francesco francesco
 - nino nino
-- matteo matteo 
+- matteo matteo
 - maria maria
 - paolo paolo
 
-Aprire una chat:
-- inviare "chat" dal menu principale.
-- inviare l'username dell'utente con cui si desidera chattare. (inviando "users" e` possibile vedere gli utenti online)
+##### Opening a Chat
+To initiate a chat, select the "chat" option from the main menu and provide the username of the user you wish to chat with. To see the list of online users, use the "users" command.
 
+##### Closing a Chat
+To close an open chat session, simply send the "return" command from within the chat.
 
-Chiudere una chat:
-- inviare "return" da una chat aperta
+##### Disconnecting a Client from the Server
+To disconnect a client from the server, select the "exit" option from the main menu.
 
-Disconnettersi dal server:
-- inviare "exit" dal menu principale
-
-
-Spengere il server: 
-- inviare "shutdown"
-
-
+##### Server Shutdown
+To shut down the server, send the "shutdown" command.
 
